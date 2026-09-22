@@ -1,0 +1,14 @@
+{
+  "thread_id": "internal-acme-sso-handoff-001",
+  "subject": "Acme handoff — SSO requirement",
+  "messages": [
+    {
+      "message_id": "internal-acme-sso-handoff-001-msg1",
+      "from": "jordan.lee@ourcompany.com",
+      "to": ["sam.rivera@ourcompany.com"],
+      "cc": [],
+      "date": "2026-10-06T11:03:00-05:00",
+      "text": "Hey Sam — handing off Acme. Headline ask: Acme needs SSO by December. This is the blocker for the renewal, so it needs to be prioritized. Let me know if you need anything else from the account side."
+    }
+  ]
+}
