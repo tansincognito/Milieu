@@ -1,6 +1,9 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
@@ -25,7 +28,7 @@ class Settings(BaseSettings):
     prompt_version: str = "1"
     schema_version: str = "1"
 
-    mock_data_dir: str = "../mock-data"
+    mock_data_dir: str = str(_REPO_ROOT / "mock-data")
 
 
 @lru_cache

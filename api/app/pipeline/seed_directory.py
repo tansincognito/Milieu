@@ -30,6 +30,7 @@ def load_directory(db: Session, tenant_id: uuid.UUID, directory_path: Path) -> N
     data = json.loads(directory_path.read_text(encoding="utf-8"))
 
     entity_id_by_slug: dict[str, uuid.UUID] = {}
+    seen_normalized_aliases: set[str] = set()
     for entity in data.get("entities", []):
         row = (
             db.query(Entities)
@@ -50,6 +51,11 @@ def load_directory(db: Session, tenant_id: uuid.UUID, directory_path: Path) -> N
 
         for alias in entity.get("aliases", [entity["name"]]):
             normalized = normalize_alias(alias)
+            # Different raw aliases (e.g. "Acme", "Acme Corp", "ACME Inc.") can normalize
+            # to the same string once legal suffixes are stripped — skip re-inserting one
+            # already handled in this run, in addition to checking what's already in the DB.
+            if normalized in seen_normalized_aliases:
+                continue
             existing_alias = (
                 db.query(EntityAliases)
                 .filter(
@@ -58,6 +64,7 @@ def load_directory(db: Session, tenant_id: uuid.UUID, directory_path: Path) -> N
                 )
                 .first()
             )
+            seen_normalized_aliases.add(normalized)
             if existing_alias is None:
                 db.add(
                     EntityAliases(

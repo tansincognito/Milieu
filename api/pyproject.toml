@@ -39,6 +39,10 @@ testpaths = ["tests"]
 line-length = 100
 target-version = "py313"
 
+[tool.ruff.lint]
+# B008: FastAPI's `Depends(...)` in a default argument is the idiomatic pattern, not a bug.
+ignore = ["B008"]
+
 [tool.mypy]
 python_version = "3.13"
 ignore_missing_imports = true
