@@ -8,9 +8,10 @@ from redis import Redis
 
 from app.core.config import Settings, get_settings
 from app.core.db import SessionLocal
-from app.core.factories import build_redis_client
+from app.core.factories import build_redis_client, build_slack_client
 from app.queue.base import JobQueue
 from app.queue.postgres import PostgresJobQueue
+from app.slack.client import SlackClient
 
 
 def get_queue() -> JobQueue:
@@ -28,3 +29,7 @@ def get_redis() -> Generator[Redis]:
 
 def get_app_settings() -> Settings:
     return get_settings()
+
+
+def get_slack_client() -> SlackClient:
+    return build_slack_client(get_settings())

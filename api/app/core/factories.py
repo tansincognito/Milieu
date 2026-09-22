@@ -10,6 +10,7 @@ from app.embedding.base import EmbeddingClient
 from app.embedding.fastembed_client import FastEmbedClient
 from app.llm.base import LLMClient
 from app.llm.openrouter import OpenRouterLLMClient
+from app.slack.client import HttpSlackClient, SlackClient
 
 
 def build_llm_client(settings: Settings) -> LLMClient:
@@ -31,3 +32,7 @@ def build_embedding_client(settings: Settings) -> EmbeddingClient:
 
 def build_redis_client(settings: Settings) -> Redis:
     return Redis.from_url(settings.redis_url)
+
+
+def build_slack_client(settings: Settings) -> SlackClient:
+    return HttpSlackClient(bot_token=settings.slack_bot_token)

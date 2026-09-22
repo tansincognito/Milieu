@@ -132,3 +132,17 @@ def load_directory(db: Session, tenant_id: uuid.UUID, directory_path: Path) -> N
 def load_slack_channel_stage_map(directory_path: Path) -> dict[str, Stage | None]:
     data = json.loads(directory_path.read_text(encoding="utf-8"))
     return cast(dict[str, "Stage | None"], dict(data.get("slack_channels", {})))
+
+
+def load_slack_channel_id_stage_map(directory_path: Path) -> dict[str, Stage | None]:
+    """Channel-ID -> stage (§3), keyed by Slack channel ID rather than name.
+
+    The mock replay connector (`MockSlackSeedConnector`) has the channel *name* on every
+    seed message, so it uses `load_slack_channel_stage_map` above. A real Slack Events API
+    delivery only carries the channel *ID* (`event.channel`), never the name, so the live
+    `/sources/slack/events` / `/sources/slack/interactions` routes need this ID-keyed
+    sibling instead. Seeded with the same mock channel IDs used in
+    `mock-data/slack/seed.json` (`slack_channel_ids` in `directory.json`).
+    """
+    data = json.loads(directory_path.read_text(encoding="utf-8"))
+    return cast(dict[str, "Stage | None"], dict(data.get("slack_channel_ids", {})))

@@ -100,5 +100,12 @@
     "eng-auth": "engineering",
     "globex-onboarding": "customer_success",
     "incidents": "engineering"
+  },
+  "slack_channel_ids": {
+    "C_ACME_DEAL": "sales",
+    "C_PRODUCT": "product",
+    "C_ENG_AUTH": "engineering",
+    "C_GLOBEX_ONBOARDING": "customer_success",
+    "C_INCIDENTS": "engineering"
   }
 }
