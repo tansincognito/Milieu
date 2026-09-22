@@ -81,7 +81,7 @@ class PostgresJobQueue:
             )
             db.commit()
 
-    def fail(self, job_id: uuid.UUID, error: str) -> None:
+    def fail(self, job_id: uuid.UUID, error: str, retry_after: float | None = None) -> None:
         with self._session_factory() as db:
             attempts = db.execute(
                 text("SELECT attempts FROM processing_jobs WHERE id = :id"), {"id": job_id}
@@ -96,7 +96,9 @@ class PostgresJobQueue:
                     {"id": job_id, "error": error},
                 )
             else:
-                backoff = timedelta(seconds=2**attempts)
+                backoff = (
+                    timedelta(seconds=retry_after) if retry_after is not None else timedelta(seconds=2**attempts)
+                )
                 run_after = datetime.now(UTC) + backoff
                 db.execute(
                     text(

@@ -15,10 +15,9 @@ import hashlib
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from app.connectors.base import RawSource
-from app.schemas.sources import CallConsent, CallProvenance, NormalizedSource
+from app.schemas.sources import CallConsent, CallProvenance, NormalizedSource, SourceKind
 
 
 class ConsentNotGivenError(RuntimeError):
@@ -41,7 +40,7 @@ def _parse_header(text: str) -> tuple[dict[str, str], str]:
 
 
 class MockCallConnector:
-    kind: Literal["call"] = "call"
+    kind: SourceKind = "call"
 
     def __init__(self, root: Path) -> None:
         self._root = root

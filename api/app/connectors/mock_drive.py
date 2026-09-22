@@ -10,11 +10,10 @@ import hashlib
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
 from app.connectors.base import RawSource
 from app.connectors.markdown import split_markdown_sections
-from app.schemas.sources import DriveProvenance, NormalizedSource, Stage
+from app.schemas.sources import DriveProvenance, NormalizedSource, SourceKind, Stage
 
 FOLDER_TO_STAGE: dict[str, Stage] = {
     "sales": "sales",
@@ -25,7 +24,7 @@ FOLDER_TO_STAGE: dict[str, Stage] = {
 
 
 class MockDriveConnector:
-    kind: Literal["drive"] = "drive"
+    kind: SourceKind = "drive"
 
     def __init__(self, root: Path) -> None:
         self._root = root

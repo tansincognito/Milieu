@@ -13,15 +13,14 @@ import uuid
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from app.connectors.base import RawSource
 from app.directory.resolve import PeopleDirectory, resolve_person
-from app.schemas.sources import EmailProvenance, NormalizedSource
+from app.schemas.sources import EmailProvenance, NormalizedSource, SourceKind
 
 
 class MockEmailConnector:
-    kind: Literal["email"] = "email"
+    kind: SourceKind = "email"
 
     def __init__(self, root: Path, directory: PeopleDirectory, tenant_id: uuid.UUID) -> None:
         self._root = root

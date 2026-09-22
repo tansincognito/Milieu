@@ -31,6 +31,7 @@ class JobQueue(Protocol):
         """Mark a claimed job done."""
         ...
 
-    def fail(self, job_id: uuid.UUID, error: str) -> None:
-        """Record a failure. Requeues with backoff, or moves to `poison` at MAX_ATTEMPTS."""
+    def fail(self, job_id: uuid.UUID, error: str, retry_after: float | None = None) -> None:
+        """Record a failure. Requeues with backoff (or `retry_after` seconds if given —
+        e.g. an LLM provider's 429 Retry-After), or moves to `poison` at MAX_ATTEMPTS."""
         ...

@@ -16,14 +16,13 @@ import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
 from app.connectors.base import RawSource
-from app.schemas.sources import NormalizedSource, SlackProvenance, Stage
+from app.schemas.sources import NormalizedSource, SlackProvenance, SourceKind, Stage
 
 
 class MockSlackSeedConnector:
-    kind: Literal["slack"] = "slack"
+    kind: SourceKind = "slack"
 
     def __init__(self, seed_path: Path, channel_stage_map: dict[str, Stage | None]) -> None:
         self._seed_path = seed_path

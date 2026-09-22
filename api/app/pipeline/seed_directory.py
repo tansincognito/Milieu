@@ -9,10 +9,12 @@ import json
 import re
 import uuid
 from pathlib import Path
+from typing import cast
 
 from sqlalchemy.orm import Session
 
 from app.models.orm import Entities, EntityAliases, OrgDomains, People
+from app.schemas.sources import Stage
 
 _STRIP_SUFFIXES = ("inc", "corp", "corporation", "llc", "ltd", "co")
 
@@ -120,6 +122,6 @@ def load_directory(db: Session, tenant_id: uuid.UUID, directory_path: Path) -> N
     db.commit()
 
 
-def load_slack_channel_stage_map(directory_path: Path) -> dict[str, str | None]:
+def load_slack_channel_stage_map(directory_path: Path) -> dict[str, Stage | None]:
     data = json.loads(directory_path.read_text(encoding="utf-8"))
-    return dict(data.get("slack_channels", {}))
+    return cast(dict[str, "Stage | None"], dict(data.get("slack_channels", {})))
