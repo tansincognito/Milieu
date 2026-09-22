@@ -1,0 +1,14 @@
+{
+  "thread_id": "internal-scim-scope-001",
+  "subject": "SCIM scope for Acme",
+  "messages": [
+    {
+      "message_id": "internal-scim-scope-001-msg1",
+      "from": "sam.rivera@ourcompany.com",
+      "to": ["priya.shah@ourcompany.com"],
+      "cc": [],
+      "date": "2026-10-11T16:20:00-05:00",
+      "text": "Priya — decision on Acme: SCIM provisioning is deferred to Q1. SAML/Okta is the December priority and I don't want to split the team's focus before that date lands. We'll scope SCIM properly once SSO ships."
+    }
+  ]
+}

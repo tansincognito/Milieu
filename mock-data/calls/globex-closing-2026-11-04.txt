@@ -1,0 +1,19 @@
+# call_id: globex-closing-2026-11-04
+# date: 2026-11-04T10:00:00-05:00
+# consent_given: true
+# consent_by: Jamie Fox
+# consent_at: 2026-11-04T09:58:00-05:00
+
+SALES: Great to have you on board, Jamie. Let's nail down the onboarding requirements before I hand you to our CS team.
+
+CUSTOMER: Sounds good. Top of the list: all of our data has to stay in the EU — we're contractually required to host in eu-west-1 specifically, not just "somewhere in Europe." That's non-negotiable for our compliance team.
+
+SALES: EU data residency, eu-west-1 specifically. Got it.
+
+CUSTOMER: We're buying 500 seats for the initial rollout across our EU offices. And we need the Salesforce integration live at launch — our sales ops team lives in Salesforce and won't adopt anything that doesn't sync with it.
+
+SALES: 500 seats, Salesforce integration at launch. The Salesforce connector is included on the Enterprise plan, so that's covered as part of your contract.
+
+CUSTOMER: Perfect. We're targeting go-live on January 10th — that's when our EU sales team comes back from year-end and we want the tenant ready.
+
+SALES: January 10th, understood. I'll get this over to our customer success team for onboarding.

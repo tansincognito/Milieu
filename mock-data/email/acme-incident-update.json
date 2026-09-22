@@ -1,0 +1,14 @@
+{
+  "thread_id": "acme-incident-update-001",
+  "subject": "Quick update on this evening's checkout issue",
+  "messages": [
+    {
+      "message_id": "acme-incident-update-001-msg1",
+      "from": "jordan.lee@ourcompany.com",
+      "to": ["dana.kim@acme.com"],
+      "cc": [],
+      "date": "2026-11-27T20:15:00-05:00",
+      "text": "Hi Dana, wanted to give you a heads up — we had a brief blip this evening with checkout, fully resolved now, no data impact on your end. Let me know if you have any questions."
+    }
+  ]
+}

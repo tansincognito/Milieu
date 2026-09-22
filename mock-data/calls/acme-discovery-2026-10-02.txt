@@ -1,0 +1,17 @@
+# call_id: acme-discovery-2026-10-02
+# date: 2026-10-02T14:00:00-05:00
+# consent_given: true
+# consent_by: Dana Kim
+# consent_at: 2026-10-02T13:55:00-05:00
+
+SALES: Thanks for hopping on, Dana. Walk me through what InfoSec needs before you can roll this out company-wide.
+
+CUSTOMER: Sure. The big one is identity. We need SAML through Okta — Okta's our corporate IdP, everything else we run integrates with it. That has to be live by December 15th. Our IT freeze starts right after that, so December 15th is a hard date, not a target.
+
+SALES: Understood, SAML through Okta, December 15th. We can have a beta ready by December 1st so your team has time to test before the freeze.
+
+CUSTOMER: That works. We'll also need audit logs retained for at least a year for our SOC 2 cycle.
+
+SALES: Noted. And while we're talking about identity — you'd probably want SCIM too, so provisioning is automated end to end. Want me to add that to the list, or is that not a priority for you right now?
+
+CUSTOMER: We can talk about that separately from Jordan's team — SSO is the one that's blocking us today.

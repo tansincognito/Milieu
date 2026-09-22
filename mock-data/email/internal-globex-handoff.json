@@ -1,0 +1,14 @@
+{
+  "thread_id": "internal-globex-handoff-001",
+  "subject": "Globex handoff to CS",
+  "messages": [
+    {
+      "message_id": "internal-globex-handoff-001-msg1",
+      "from": "taylor.brooks@ourcompany.com",
+      "to": ["morgan.diaz@ourcompany.com"],
+      "cc": [],
+      "date": "2026-11-05T09:30:00-05:00",
+      "text": "Hi Morgan, handing off Globex for onboarding. Quick summary: Globex, 50 seats, US region fine, go-live January. Let me know if you need the call recording — should be pretty straightforward onboarding."
+    }
+  ]
+}

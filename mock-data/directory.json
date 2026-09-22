@@ -1,0 +1,104 @@
+{
+  "entities": [
+    {
+      "slug": "acme",
+      "name": "Acme Corp",
+      "kind": "customer",
+      "aliases": ["Acme", "Acme Corp", "ACME Inc."]
+    },
+    {
+      "slug": "globex",
+      "name": "Globex Corporation",
+      "kind": "customer",
+      "aliases": ["Globex", "Globex Corporation", "Globex Corp"]
+    }
+  ],
+  "org_domains": [
+    { "domain": "ourcompany.com", "is_internal": true },
+    { "domain": "acme.com", "is_internal": false, "entity_slug": "acme" },
+    { "domain": "globex.com", "is_internal": false, "entity_slug": "globex" }
+  ],
+  "people": [
+    {
+      "email": "jordan.lee@ourcompany.com",
+      "slack_user_id": "U_AE_JORDAN",
+      "name": "Jordan Lee",
+      "team": "sales",
+      "role": "Account Executive",
+      "is_external": false
+    },
+    {
+      "email": "taylor.brooks@ourcompany.com",
+      "slack_user_id": "U_AE_TAYLOR",
+      "name": "Taylor Brooks",
+      "team": "sales",
+      "role": "Account Executive",
+      "is_external": false
+    },
+    {
+      "email": "sam.rivera@ourcompany.com",
+      "slack_user_id": "U_PM_SAM",
+      "name": "Sam Rivera",
+      "team": "product",
+      "role": "Product Manager",
+      "is_external": false
+    },
+    {
+      "email": "casey.nguyen@ourcompany.com",
+      "slack_user_id": "U_PM_CASEY",
+      "name": "Casey Nguyen",
+      "team": "product",
+      "role": "Product Manager",
+      "is_external": false
+    },
+    {
+      "email": "priya.shah@ourcompany.com",
+      "slack_user_id": "U_ENG_PRIYA",
+      "name": "Priya Shah",
+      "team": "engineering",
+      "role": "Engineering Lead",
+      "is_external": false
+    },
+    {
+      "email": "alex.kim@ourcompany.com",
+      "slack_user_id": "U_ENG_ALEX",
+      "name": "Alex Kim",
+      "team": "engineering",
+      "role": "On-call SRE",
+      "is_external": false
+    },
+    {
+      "email": "morgan.diaz@ourcompany.com",
+      "slack_user_id": "U_CS_MORGAN",
+      "name": "Morgan Diaz",
+      "team": "customer_success",
+      "role": "Customer Success Manager",
+      "is_external": false
+    },
+    {
+      "email": "dana.kim@acme.com",
+      "slack_user_id": null,
+      "name": "Dana Kim",
+      "team": null,
+      "role": "IT Director (Acme)",
+      "is_external": true,
+      "company_entity_slug": "acme"
+    },
+    {
+      "email": "jamie.fox@globex.com",
+      "slack_user_id": null,
+      "name": "Jamie Fox",
+      "team": null,
+      "role": "VP Engineering (Globex)",
+      "is_external": true,
+      "company_entity_slug": "globex"
+    }
+  ],
+  "slack_channels": {
+    "acme-deal": "sales",
+    "product": "product",
+    "eng-auth": "engineering",
+    "globex-onboarding": "customer_success",
+    "incidents": "engineering"
+  }
+}

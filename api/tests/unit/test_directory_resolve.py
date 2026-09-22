@@ -97,6 +97,7 @@ def test_external_person_forces_customer_actor_role() -> None:
     result = resolve_person(directory, TENANT, email="dana@acme.com")
 
     assert result.actor_role == "customer"
+    assert result.stage == "sales"
 
 
 def test_speaker_label_fallback_for_call_transcripts() -> None:

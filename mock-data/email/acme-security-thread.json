@@ -1,0 +1,22 @@
+{
+  "thread_id": "acme-security-thread-001",
+  "subject": "Acme Corp — Security & Identity Requirements",
+  "messages": [
+    {
+      "message_id": "acme-security-thread-001-msg1",
+      "from": "dana.kim@acme.com",
+      "to": ["jordan.lee@ourcompany.com"],
+      "cc": [],
+      "date": "2026-10-05T09:12:00-05:00",
+      "text": "Hi Jordan, confirming from our security review call: we need SAML through Okta as our identity provider, live by December 15. This is a hard requirement for our InfoSec sign-off, not a nice-to-have. We also need SCIM provisioning — that's required too, so our IT team can automate user lifecycle through Okta instead of managing accounts manually. Let me know once you have a committed date."
+    },
+    {
+      "message_id": "acme-security-thread-001-msg2",
+      "from": "jordan.lee@ourcompany.com",
+      "to": ["dana.kim@acme.com"],
+      "cc": [],
+      "date": "2026-10-05T14:47:00-05:00",
+      "text": "Thanks Dana, got it — SAML/Okta and SCIM, targeting Dec 15. Looping in our product team this week."
+    }
+  ]
+}

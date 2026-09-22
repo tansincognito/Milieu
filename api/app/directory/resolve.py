@@ -129,11 +129,12 @@ def resolve_person(
         person = directory.get_by_slack_user_id(tenant_id, slack_user_id)
 
     if person is not None:
+        if person.is_external:
+            # Customer statements belong to the sales stage regardless of `team` (§3.1).
+            return DirectoryResolution("sales", "customer", person.id, True)
         stage = TEAM_TO_STAGE.get(person.team or "")
         actor_role = TEAM_TO_ACTOR_ROLE.get(person.team or "", "other")
-        if person.is_external:
-            actor_role = "customer"
-        return DirectoryResolution(stage, actor_role, person.id, person.is_external)
+        return DirectoryResolution(stage, actor_role, person.id, False)
 
     if email:
         domain = email.rsplit("@", 1)[-1].lower()
