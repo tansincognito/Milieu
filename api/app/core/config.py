@@ -9,9 +9,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://milieu:milieu@localhost:5544/milieu"
     redis_url: str = "redis://localhost:6389/0"
 
-    llm_provider: str = "anthropic"
-    anthropic_api_key: str = ""
-    llm_model: str = "claude-sonnet-5"
+    llm_provider: str = "openrouter"
+    openrouter_api_key: str = ""
+    llm_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    openrouter_app_name: str = "Milieu"
+    openrouter_site_url: str = "https://github.com/milieu"
 
     embedding_provider: str = "fastembed"
     embedding_model: str = "BAAI/bge-small-en-v1.5"

@@ -24,6 +24,7 @@ Supersedes: PRD + Technical Specification v0.1 (500-line numbered version)
 | C13 | `context_gaps` table added, plus a Slack interactivity endpoint. | Gaps need Review/Ignore state. Slack buttons need an endpoint. Both were missing. |
 | C14 | "Reliably" is defined: 5/5 consecutive runs, temperature 0, extraction cache disabled. | v0.1 used "reliably" without a definition. |
 | C16 | Two more scenarios beside IAM: customer onboarding with a sales error, and a cloud-provider outage at peak hours reported by engineering. This adds a `customer_success` stage, two contracts, and incident/onboarding slots. No new types. | The IAM flow alone only tests forward Sales→Product→Engineering loss. The new scenarios test a same-stage human error and a reverse Engineering→Sales/CS handoff. |
+| C17 | The LLM provider for the MVP is OpenRouter's free tier, behind the same `LLMClient` interface. | Zero cost for the MVP. The interface keeps a paid or other vendor a config swap. |
 | C15 | Email stage and every source's `actor_role` are resolved through a people directory (person → team → role). | Internal email must map to the sender's team. The same lookup gives Slack authors a correct role. |
 
 Unchanged: the product thesis, the non-goals, the Sales → Product → Engineering flow, Acme as the test entity, and the React / FastAPI / Postgres + pgvector / Redis / Docker Compose stack.
@@ -471,7 +472,7 @@ For Product→Engineering, a gap is marked `inherited` if the same slot was alre
 
 ## 11. Extraction
 
-- `LLMClient` interface: `extract(schema, system, content) -> PydanticModel`, `judge(schema, prompt) -> PydanticModel`. The default implementation is Anthropic Claude via structured output. The provider is selected by env var, so no vendor is hard-coded.
+- `LLMClient` interface: `extract(schema, system, content) -> PydanticModel`, `judge(schema, prompt) -> PydanticModel`. The MVP implementation is OpenRouter (OpenAI-compatible API, a `:free` model set by `LLM_MODEL`) using JSON-schema structured output, with a JSON-mode fallback. Free-tier HTTP 429s are retried through the job queue backoff. The provider is selected by env var, so no vendor is hard-coded.
 - `EmbeddingClient` is a separate interface. The default is a local `fastembed` model (`BAAI/bge-small-en-v1.5`, 384 dims), so dev works without a key. (Verify the current model availability.)
 - One extraction call per source record returns `list[ExtractedContext]`, with evidence as exact quote plus span. Pydantic validates the output. Invalid output → one retry with the validation error appended → otherwise the job fails.
 - Call transcripts: the prompt receives speaker labels. Rules: `CUSTOMER` statements of need → `requirement`, authority 4. `SALES` promises → `commitment`. `SALES` hedged proposals → `requirement` or `open_question`, authority 1. A commitment never creates or upgrades a customer requirement.

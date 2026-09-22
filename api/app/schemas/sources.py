@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -57,7 +57,7 @@ class CallProvenance(BaseModel):
 
 
 Provenance = Annotated[
-    Union[SlackProvenance, EmailProvenance, DriveProvenance, CallProvenance],
+    SlackProvenance | EmailProvenance | DriveProvenance | CallProvenance,
     Field(discriminator="kind"),
 ]
 
