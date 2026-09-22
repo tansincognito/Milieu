@@ -48,10 +48,19 @@ class CallConsent(BaseModel):
 
 
 class CallProvenance(BaseModel):
+    """§6.2 provenance for a call source.
+
+    The MVP ingests one source per *transcript* (dispatch scope decision, not per
+    utterance), so the extractor sees full conversational context and speaker labels
+    inline in `NormalizedSource.text`. `speaker`/`utterance_index` are kept for schema
+    parity with §6.2 but are `None`/`0` at the whole-transcript grain; a future
+    per-utterance connector would populate them per source.
+    """
+
     kind: Literal["call"] = "call"
     call_id: str
-    speaker: str
-    utterance_index: int
+    speaker: str | None = None
+    utterance_index: int = 0
     transcript_path: str
     consent: CallConsent
 
