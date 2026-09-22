@@ -24,6 +24,7 @@ Supersedes: PRD + Technical Specification v0.1 (500-line numbered version)
 | C13 | `context_gaps` table added, plus a Slack interactivity endpoint. | Gaps need Review/Ignore state. Slack buttons need an endpoint. Both were missing. |
 | C14 | "Reliably" is defined: 5/5 consecutive runs, temperature 0, extraction cache disabled. | v0.1 used "reliably" without a definition. |
 | C16 | Two more scenarios beside IAM: customer onboarding with a sales error, and a cloud-provider outage at peak hours reported by engineering. This adds a `customer_success` stage, two contracts, and incident/onboarding slots. No new types. | The IAM flow alone only tests forward Sales→Product→Engineering loss. The new scenarios test a same-stage human error and a reverse Engineering→Sales/CS handoff. |
+| C18 | Four gaps closed from the Day 1a build: `customer_success` added to `actor_role`; optional `author` on drive provenance with a stage fallback; a `speculative` flag that separates authority 2 from 1; and `evidence_locator` for per-quote position, which keeps call transcripts whole as sources. | The build hit each of these and had to interpret. Interpretations belong in the spec, not in code comments. |
 | C17 | The LLM provider for the MVP is OpenRouter's free tier, behind the same `LLMClient` interface. | Zero cost for the MVP. The interface keeps a paid or other vendor a config swap. |
 | C15 | Email stage and every source's `actor_role` are resolved through a people directory (person → team → role). | Internal email must map to the sender's team. The same lookup gives Slack authors a correct role. |
 
@@ -163,6 +164,7 @@ Slots are typed attributes stored in `attributes` (jsonb, validated by Pydantic)
 | `root_cause` | incident | `AWS us-east-1 ELB degradation` |
 | `sla_impact` | incident | `{breached: true, contract_uptime: 99.95, credit_owed: true}` |
 | `remediation` | incident | `multi-AZ failover by 2026-12-15` |
+| `speculative` | flag | `true` when the statement is hedged ("probably", "they might want"). Set by the extractor; this is what separates authority 2 from authority 1. |
 | `extra` | specificity | free key-values the extractor found that don't fit other slots |
 
 Instance subjects: for capabilities that have instances, the subject key carries the instance id, e.g. `acme:incident:INC-2311`. The incident id is taken from the source text, or assigned by the extractor from `(date, root system)` and routed to review.
@@ -180,7 +182,7 @@ subject_key        text
 content            normalized one-sentence statement (LLM-written; never replaces evidence)
 attributes         jsonb slots §4.2
 actor_label        text  ("Dana Kim (Acme)", "SALES", ...)
-actor_role         enum customer | sales | product | engineering | other | system
+actor_role         enum customer | sales | product | engineering | customer_success | other | system
 stage              enum sales | product | engineering | null
 authority          smallint 0–4 (§5)
 confidence         real 0–1 (extraction certainty)
@@ -192,6 +194,9 @@ valid_to           timestamptz null
 source_id          fk sources, NOT NULL
 evidence_quote     text, exact substring of source text
 evidence_span      int4range, char offsets into source text
+evidence_locator   jsonb null — where inside the source the quote sits, at a finer grain than the
+                   source record: {speaker, utterance_index} for calls, {section_heading} for drive.
+                   Source records stay whole-document/whole-transcript so the extractor sees full context.
 embedding          vector(384)
 extraction_key     text (cache key §13)
 version            int
@@ -223,13 +228,13 @@ These are never combined into one score.
 | 4 | The customer states the requirement directly (call speaker `CUSTOMER`, or an email from a customer domain). A `decision` by anyone on the product team (directory team = `product`). Every team member is accountable, so there is no approver list. A human-confirmed object. |
 | 3 | A statement by the owning function inside its own stage (an engineering decision in an engineering source). |
 | 2 | Sales restating the customer (a sales-stage summary without a direct customer quote). |
-| 1 | Sales suggestion or speculation ("they'd probably want...", "we could offer..."). A sales `commitment` never raises the authority of a customer requirement. |
+| 1 | Sales suggestion or speculation, i.e. the extractor set `speculative = true` ("they'd probably want...", "we could offer..."). A sales `commitment` never raises the authority of a customer requirement. |
 | 0 | LLM inference not stated in the text. |
 
 Review routing:
 
 - `confidence < 0.6` → review.
-- `authority ≤ 1` **and** the object would affect a contract field of importance `critical` → review.
+- `authority ≤ 1` **and** the object would affect a contract field of importance `critical` → review. (Requires contracts, so this trigger goes live on Day 3.)
 - New capability slug outside the vocabulary → review. Any reviewer can approve it, and it is added to `capability_vocab`.
 - Everything else → `active`, unless a conflict rule applies (§7.3).
 
@@ -259,8 +264,11 @@ acl                list of principal ids, or ["*"] (§14)
 provenance         kind-specific, Pydantic-validated:
   slack  → workspace_id, channel_id, message_ts, thread_ts, author_id
   email  → thread_id, message_id, from, to[], cc[], subject
-  drive  → document_id, path, section_heading, section_index, modified_ts
-  call   → call_id, speaker, utterance_index, transcript_path, consent{given, by, at}
+  drive  → document_id, path, section_heading, section_index, modified_ts, author (optional; the
+           mock loader reads a `> author:` line in the doc front matter. When it is absent, `actor_role`
+           falls back to the source's stage, i.e. the owning function.)
+  call   → call_id, transcript_path, participants[], consent{given, by, at}
+           (speaker and utterance_index are per-quote, so they live in `evidence_locator`, not here)
 ```
 
 Drive documents are split on markdown headings. Each section is one source record.
