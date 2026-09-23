@@ -75,6 +75,28 @@ def _determine_status(confidence: float, is_new_capability: bool) -> str:
     return "active"
 
 
+def _document_context(source: Sources) -> str | None:
+    """A one-line description of the parent artifact a source record came from.
+
+    Sections and single messages are extracted in isolation, so without this the model
+    cannot infer the capability or entity a fragment belongs to.
+    """
+    prov = source.provenance or {}
+    if source.kind == "drive":
+        path = prov.get("path")
+        heading = prov.get("section_heading")
+        if path and heading:
+            return f'the document "{path}", section "{heading}"'
+        return f'the document "{path}"' if path else None
+    if source.kind == "email":
+        subject = prov.get("subject")
+        return f'the email thread "{subject}"' if subject else None
+    if source.kind == "call":
+        call_id = prov.get("call_id")
+        return f"the call transcript {call_id}" if call_id else None
+    return None
+
+
 def process_extraction_job(
     db: Session,
     redis_client: Redis,
@@ -95,7 +117,9 @@ def process_extraction_job(
     if cached is not None:
         result = cached
     else:
-        system = build_extraction_prompt(source.kind, source.stage)
+        system = build_extraction_prompt(
+            source.kind, source.stage, source.source_ts, _document_context(source)
+        )
         result = llm.extract(ExtractionResult, system, source.text)
         set_cached_extraction(redis_client, cache_key, result)
 
