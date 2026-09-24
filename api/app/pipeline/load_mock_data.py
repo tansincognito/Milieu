@@ -30,8 +30,13 @@ def load_mock_data(
 
     connectors: list[SourceConnector] = [
         MockDriveConnector(mock_data_dir / "drive"),
-        MockEmailConnector(mock_data_dir / "email", directory, tenant_id),
+        # Calls before email: jobs process roughly in enqueue order (§13.1), not content
+        # chronology, so for pairs where a call and an email both land on the same fact
+        # (e.g. Globex: the customer's call statement should out-authority the AE's later
+        # internal-email restatement per §7.3 R2), the higher-signal source needs to reach
+        # `resolve_object_state` first.
         MockCallConnector(mock_data_dir / "calls"),
+        MockEmailConnector(mock_data_dir / "email", directory, tenant_id),
         MockSlackSeedConnector(mock_data_dir / "slack" / "seed.json", channel_stage_map),
     ]
 

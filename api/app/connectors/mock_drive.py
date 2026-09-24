@@ -7,6 +7,7 @@ heading section (§6.2) becomes its own source record.
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +15,12 @@ from pathlib import Path
 from app.connectors.base import RawSource
 from app.connectors.markdown import split_markdown_sections
 from app.schemas.sources import DriveProvenance, NormalizedSource, SourceKind, Stage
+
+# Mock docs can optionally state their own narrative date ("Last updated: 2026-10-10"),
+# which — unlike filesystem mtime (checkout time, meaningless for lineage/supersession
+# ordering across a fictional §18 scenario timeline) — reflects when the document was
+# actually "last modified" in the story. Falls back to mtime when absent.
+_LAST_UPDATED_RE = re.compile(r"Last updated:\s*(\d{4}-\d{2}-\d{2})", re.IGNORECASE)
 
 FOLDER_TO_STAGE: dict[str, Stage] = {
     "sales": "sales",
@@ -33,7 +40,11 @@ class MockDriveConnector:
         for path in sorted(self._root.rglob("*.md")):
             relative = path.relative_to(self._root)
             text = path.read_text(encoding="utf-8")
-            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+            last_updated = _LAST_UPDATED_RE.search(text)
+            if last_updated:
+                mtime = datetime.fromisoformat(last_updated.group(1)).replace(tzinfo=UTC)
+            else:
+                mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
             for section in split_markdown_sections(text):
                 yield RawSource(
                     kind="drive",
