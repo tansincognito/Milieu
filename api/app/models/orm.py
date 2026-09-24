@@ -130,10 +130,12 @@ class EntityAliases(Base):
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     alias_normalized: Mapped[str] = mapped_column(String, nullable=False)
+    # §7.1 step 4: 'candidate' rows are 0.6-0.85 trgm near-misses awaiting review; only
+    # 'confirmed' rows are unique per (tenant, alias_normalized) — see migration 0002.
+    status: Mapped[str] = mapped_column(String, nullable=False, default="confirmed")
+    similarity: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
 
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "alias_normalized", name="uq_alias_tenant_normalized"),
-    )
+    __table_args__ = (CheckConstraint("status IN ('confirmed', 'candidate')", name="ck_entity_aliases_status"),)
 
 
 class Sources(Base, TenantMixin):
@@ -192,6 +194,11 @@ class ContextObjects(Base, TenantMixin):
     evidence_span: Mapped[Range] = mapped_column(INT4RANGE, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
     extraction_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    # §7.3 R3 "same author": resolved through the people directory. Nullable — drive
+    # sources carry no author identity (§6.2 gap) and call transcripts label roles only.
+    actor_person_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("people.id"), nullable=True
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
