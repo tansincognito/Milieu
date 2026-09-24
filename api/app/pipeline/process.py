@@ -1,6 +1,6 @@
-"""Extraction job pipeline: extract -> validate -> evidence-span check -> resolve entity
-(minimal) -> assign authority/confidence -> embed -> persist context_objects + a
-context_versions row (§13.1, up to persist — dedup/supersession/conflict/lineage are Day 2).
+"""Extraction job pipeline (§13.1): extract -> validate -> evidence-span check -> resolve
+entity -> assign authority/confidence -> embed -> persist context_objects + a
+context_versions row -> dedup/lifecycle/supersession/conflict (§7.2, §7.3) -> lineage (§8).
 """
 
 from __future__ import annotations
@@ -31,6 +31,8 @@ from app.pipeline.extraction_cache import (
     get_cached_extraction,
     set_cached_extraction,
 )
+from app.pipeline.lifecycle import resolve_object_state
+from app.pipeline.lineage import create_lineage_links
 from app.pipeline.prompts import PROMPT_VERSION, build_extraction_prompt
 from app.schemas.extraction import ContextAttributes, ExtractedContext, ExtractionResult
 
@@ -41,21 +43,27 @@ class SourceNotFoundError(RuntimeError):
     pass
 
 
-def _resolve_actor_role(
+def _resolve_actor(
     source: Sources, item: ExtractedContext, directory: PeopleDirectory, tenant_id: uuid.UUID
-) -> str:
+) -> tuple[str, uuid.UUID | None]:
+    """Returns (actor_role, actor_person_id). `actor_person_id` (§7.3 R3 "same author") is
+    only resolvable when the source carries a real identity — email/Slack authors resolve
+    through the directory; call transcripts label roles, not individuals, and drive's
+    DriveProvenance carries no author identity at all (documented gap, see below)."""
     if source.kind == "call":
-        return actor_role_from_speaker_label(item.actor_label)
+        return actor_role_from_speaker_label(item.actor_label), None
     if source.kind == "email":
         from_email = source.provenance.get("from")
-        return resolve_person(directory, tenant_id, email=from_email).actor_role
+        resolution = resolve_person(directory, tenant_id, email=from_email)
+        return resolution.actor_role, resolution.person_id
     if source.kind == "slack":
         author_id = source.provenance.get("author_id")
-        return resolve_person(directory, tenant_id, slack_user_id=author_id).actor_role
+        resolution = resolve_person(directory, tenant_id, slack_user_id=author_id)
+        return resolution.actor_role, resolution.person_id
     # drive: §6.2's DriveProvenance carries no author identity, so per-item actor_role
     # can't be resolved through the directory. Fall back to the source's own stage as a
     # proxy for "owning function" — documented gap, flagged in the dispatch report.
-    return source.stage or "other"
+    return source.stage or "other", None
 
 
 def _build_subject_key(entity_slug: str, capability: str, attributes: ContextAttributes) -> str:
@@ -125,7 +133,9 @@ def process_extraction_job(
 
     directory = SqlAlchemyPeopleDirectory(db)
 
-    accepted: list[tuple[ExtractedContext, tuple[int, int], str, uuid.UUID, int, bool]] = []
+    accepted: list[
+        tuple[ExtractedContext, tuple[int, int], str, uuid.UUID | None, uuid.UUID, int, bool]
+    ] = []
     for item in result.items:
         try:
             span = compute_evidence_span(source.text, item.evidence_quote)
@@ -135,7 +145,7 @@ def process_extraction_job(
             )
             continue
 
-        actor_role = _resolve_actor_role(source, item, directory, tenant_id)
+        actor_role, actor_person_id = _resolve_actor(source, item, directory, tenant_id)
         entity_id = resolve_entity(db, tenant_id, item.entity_hint)
         authority = assign_authority(
             type_=item.type, actor_role=actor_role, stage=source.stage, speculative=item.speculative
@@ -147,7 +157,9 @@ def process_extraction_job(
             db.add(CapabilityVocab(slug=item.subject_capability, parent_slug=None, synonyms=[]))
             db.flush()
 
-        accepted.append((item, span, actor_role, entity_id, authority, is_new_capability))
+        accepted.append(
+            (item, span, actor_role, actor_person_id, entity_id, authority, is_new_capability)
+        )
 
     if not accepted:
         db.commit()
@@ -157,48 +169,70 @@ def process_extraction_job(
 
     created = 0
     now = datetime.now(UTC)
-    for (item, span, actor_role, entity_id, authority, is_new_capability), embedding in zip(
-        accepted, embeddings, strict=True
-    ):
+    for (
+        item,
+        span,
+        actor_role,
+        actor_person_id,
+        entity_id,
+        authority,
+        is_new_capability,
+    ), embedding in zip(accepted, embeddings, strict=True):
         entity = db.get(Entities, entity_id)
         assert entity is not None
         subject_key = _build_subject_key(entity.slug, item.subject_capability, item.attributes)
         status = _determine_status(item.confidence, is_new_capability)
         attributes_json = item.attributes.model_dump(mode="json", exclude_none=True)
+        # §7.3: "corrects"/"corrects_hint" ride along in attributes.extra — they're not a
+        # §4.2 slot, but R3's explicit-correction check needs them on the persisted object.
+        if item.corrects or item.corrects_hint:
+            extra = attributes_json.setdefault("extra", {})
+            extra["corrects"] = item.corrects
+            if item.corrects_hint:
+                extra["corrects_hint"] = item.corrects_hint
 
-        obj_id = uuid.uuid4()
-        db.add(
-            ContextObjects(
-                id=obj_id,
-                tenant_id=tenant_id,
-                entity_id=entity_id,
-                type=item.type,
-                subject_key=subject_key,
-                content=item.content,
-                attributes=attributes_json,
-                actor_label=item.actor_label,
-                actor_role=actor_role,
-                stage=source.stage,
-                authority=authority,
-                confidence=item.confidence,
-                status=status,
-                valid_from=source.source_ts,
-                source_id=source.id,
-                evidence_quote=item.evidence_quote,
-                evidence_span=Range(span[0], span[1]),
-                embedding=embedding,
-                extraction_key=cache_key,
-                version=1,
-                created_at=now,
-                updated_at=now,
-            )
+        obj = ContextObjects(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            entity_id=entity_id,
+            type=item.type,
+            subject_key=subject_key,
+            content=item.content,
+            attributes=attributes_json,
+            actor_label=item.actor_label,
+            actor_role=actor_role,
+            actor_person_id=actor_person_id,
+            stage=source.stage,
+            authority=authority,
+            confidence=item.confidence,
+            status=status,
+            valid_from=source.source_ts,
+            source_id=source.id,
+            evidence_quote=item.evidence_quote,
+            evidence_span=Range(span[0], span[1]),
+            embedding=embedding,
+            extraction_key=cache_key,
+            version=1,
+            created_at=now,
+            updated_at=now,
         )
+        db.add(obj)
+        # Flush so `obj` has an id and is visible to the sibling queries in
+        # resolve_object_state/create_lineage_links below (and to the next accepted item
+        # in this same batch, if it shares a subject_key).
+        db.flush()
+
+        resolve_object_state(db, tenant_id, obj)
+        create_lineage_links(db, tenant_id, obj)
+
+        # obj.status may have been overridden by lifecycle rules (R1/R2/R4 -> conflicting)
+        # above; the version=1 row records the object's *final* state as first written.
         db.add(
             ContextVersions(
                 id=uuid.uuid4(),
-                context_id=obj_id,
+                context_id=obj.id,
                 version=1,
-                status=status,
+                status=obj.status,
                 attributes=attributes_json,
                 content=item.content,
                 changed_by=None,
