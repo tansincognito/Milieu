@@ -83,19 +83,79 @@ def _determine_status(confidence: float, is_new_capability: bool) -> str:
     return "active"
 
 
-def _document_context(source: Sources) -> str | None:
+def _sibling_subject_key(db: Session, tenant_id: uuid.UUID, source: Sources) -> str | None:
+    """The `subject_key` (§4.2) an earlier-processed section of the *same* parent document
+    already established, if any.
+
+    Drive documents are split on markdown headings (§6.2) and each section is extracted as
+    its own source record/job, so a later section only ever sees its own paragraph. A
+    paragraph like "## Remediation" reads as generic work in isolation and can misroute to
+    a different capability than the rest of the document (e.g. `uptime_sla` instead of
+    `incident`) even though §11's incident-vs-uptime_sla rule is spelled out, because the
+    paragraph itself doesn't repeat the outage language that made earlier sections resolve
+    correctly. Once a sibling section of the same document has already been persisted under
+    a subject_key, later sections are told to bind to that same subject instead of
+    re-deriving capability from a weaker, standalone paragraph.
+    """
+    document_id = (source.provenance or {}).get("document_id")
+    if source.kind != "drive" or not document_id:
+        return None
+    row = (
+        db.query(ContextObjects.subject_key)
+        .join(Sources, ContextObjects.source_id == Sources.id)
+        .filter(
+            Sources.tenant_id == tenant_id,
+            Sources.kind == "drive",
+            Sources.provenance["document_id"].astext == document_id,
+            Sources.id != source.id,
+        )
+        .order_by(ContextObjects.created_at.asc())
+        .first()
+    )
+    return row[0] if row else None
+
+
+def _established_subject_hint(subject_key: str) -> str:
+    """Turn a persisted `subject_key` into the phrasing the prompt's binding rule expects
+    (§4.2: `{entity_slug}:{capability}` or `{entity_slug}:incident:{incident_id}`)."""
+    parts = subject_key.split(":", 2)
+    if len(parts) == 3 and parts[1] == "incident":
+        return (
+            f'subject_capability="incident", the same incident '
+            f'(attributes.extra.incident_id="{parts[2]}")'
+        )
+    if len(parts) >= 2:
+        return f'subject_capability="{parts[1]}"'
+    return subject_key
+
+
+def _document_context(source: Sources, established_subject_key: str | None = None) -> str | None:
     """A one-line description of the parent artifact a source record came from.
 
     Sections and single messages are extracted in isolation, so without this the model
-    cannot infer the capability or entity a fragment belongs to.
+    cannot infer the capability or entity a fragment belongs to. `established_subject_key`
+    (see `_sibling_subject_key`) additionally anchors later sections of a split document to
+    the subject a sibling section already established, rather than letting each section
+    re-derive capability from its own, possibly weaker, text.
     """
     prov = source.provenance or {}
     if source.kind == "drive":
         path = prov.get("path")
         heading = prov.get("section_heading")
         if path and heading:
-            return f'the document "{path}", section "{heading}"'
-        return f'the document "{path}"' if path else None
+            base = f'the document "{path}", section "{heading}"'
+        elif path:
+            base = f'the document "{path}"'
+        else:
+            return None
+        if established_subject_key:
+            base += (
+                f". Another section of this same document has already been extracted and "
+                f"established {_established_subject_hint(established_subject_key)} — use "
+                f"that same subject for every item in this section too, even if this "
+                f"section's own text read alone would suggest something else."
+            )
+        return base
     if source.kind == "email":
         subject = prov.get("subject")
         return f'the email thread "{subject}"' if subject else None
@@ -125,8 +185,12 @@ def process_extraction_job(
     if cached is not None:
         result = cached
     else:
+        sibling_subject_key = _sibling_subject_key(db, tenant_id, source)
         system = build_extraction_prompt(
-            source.kind, source.stage, source.source_ts, _document_context(source)
+            source.kind,
+            source.stage,
+            source.source_ts,
+            _document_context(source, sibling_subject_key),
         )
         result = llm.extract(ExtractionResult, system, source.text)
         set_cached_extraction(redis_client, cache_key, result)

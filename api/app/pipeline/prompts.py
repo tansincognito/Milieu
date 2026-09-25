@@ -16,13 +16,37 @@ free models showed two distinct causes for `attributes` coming back null while `
    resolve the year and defaulted to null rather than guess. Fixed by passing the source's
    own timestamp into the prompt as a `reference_date` and adding an explicit year-inference
    rule.
+
+v6 (INC-2311 postmortem "## Remediation" section, `remediation` slot never filling on
+`acme:incident:INC-2311`): live probing (nemotron-3-super-120b-a12b:free, temperature 0)
+against the real section-split pipeline showed two compounding causes, same class as v2's:
+
+1. `subject_capability` for an isolated "## Remediation" section was unstable across
+   otherwise-identical runs (`incident`, `uptime_sla`, and even `api_access` were all seen).
+   §6.2 splits drive documents into one source record per heading, so each section is
+   extracted alone; a bare "Multi-AZ failover ... targeted for December 15" doesn't repeat
+   the outage language that anchors the *other* sections of the same postmortem to
+   `incident`, and document_context's "one part of ..." line (path/heading only) wasn't a
+   strong enough anchor by itself. Fixed by having `process._sibling_subject_key` look up
+   the `subject_key` an earlier-processed section of the *same* document already
+   established, and passing it through `document_context` with an explicit "bind to this
+   subject" instruction (§ binding rule below) — the same fix class as v2 cause 1, applied
+   to capability instead of a slot.
+2. Independent of (1): even in runs where `subject_capability=incident` was correctly
+   chosen, `attributes.remediation` still came back null while `content` and `due_date`
+   correctly narrated/filled the same remediation text. Root cause: `remediation` is the one
+   incident slot that had never appeared filled in a worked example (the incident worked
+   example below only demonstrated `impact`/`time_window`/`root_cause`/`sla_impact`) —
+   the same "no worked example -> treated as optional" failure mode as v2 cause 1, scoped to
+   a single field. Fixed by extending that worked example to also state and fill
+   `remediation`.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
 
-PROMPT_VERSION = "5"
+PROMPT_VERSION = "6"
 
 CAPABILITY_VOCAB = (
     "sso, scim, audit_logs, data_residency, rbac, api_access, uptime_sla, pricing, "
@@ -123,7 +147,48 @@ Correct extraction for that outage:
 
 The nested incident slots (`impact`, `time_window`, `sla_impact`) are objects and must be
 filled as objects whenever the document states those facts — never left null because the
-value is structured.
+value is structured. `remediation` is a plain string slot and follows the same rule: when
+the text states the fix, copy it into `attributes.remediation` too — do not leave it null
+just because `content` or `due_date` already captured part of the same fact.
+
+Third worked example, a later section of the same document above, extracted on its own (as
+drive sections are — see the "one part of" note at the end of this prompt):
+
+Text: 'Remediation: multi-AZ failover for the affected service, targeted for December 15,
+2026, so a single-AZ failure cannot cause the same outage again.'
+
+document_context for this fragment: 'This text is one part of: the document
+"postmortem-INC-9001.md", section "Remediation". Another section of this same document has
+already been extracted and established subject_capability="incident", the same incident
+(attributes.extra.incident_id="INC-9001") — use that same subject for every item in this
+section too, even if this section's own text read alone would suggest something else.'
+
+Correct extraction:
+{{
+  "type": "resolution",
+  "subject_capability": "incident",
+  "entity_hint": "Contoso",
+  "content": "Remediation for the Contoso incident is multi-AZ failover for the affected service, targeted for December 15, 2026.",
+  "attributes": {{
+    "remediation": "multi-AZ failover for the affected service, targeted for December 15, 2026",
+    "due_date": "2026-12-15",
+    "due_date_precision": "day",
+    "extra": {{"incident_id": "INC-9001"}}
+  }},
+  "actor_label": null,
+  "evidence_quote": "Remediation: multi-AZ failover for the affected service, targeted for December 15, 2026, so a single-AZ failure cannot cause the same outage again.",
+  "confidence": 0.9,
+  "corrects": false,
+  "corrects_hint": null,
+  "speculative": false
+}}
+
+Note two things this example is testing: `subject_capability` stayed `incident` (not
+`uptime_sla`, and not a new capability) because the document_context said another section
+already established that subject — this section's own wording alone ("multi-AZ failover
+... service") does not mention "outage" or "incident" at all. And `attributes.remediation`
+was filled with the fix, in addition to `due_date` — one fact in the text can fill more
+than one slot; filling `due_date` is never a reason to leave `remediation` null.
 
 Note every concrete fact in the quote (OIDC, Azure AD, March 3rd, 200, Enterprise) has a
 slot filled with that exact value — none of it was left to `content` alone, and the bare
@@ -160,6 +225,12 @@ Other rules:
    customer requirement.
 8. `confidence` (0-1) is how sure you are the text actually says this — not how important it
    is.
+9. If the "one part of" note at the end of this prompt says another section of the same
+   document already established a subject (a `subject_capability`, and for incidents an
+   `attributes.extra.incident_id`), use that exact subject for every item you extract from
+   this section — do not re-derive `subject_capability` from this section's own paragraph
+   in isolation, even when that paragraph alone would suggest something more generic (see
+   the third worked example above).
 
 Return every distinct item as one entry in `items`. Do not invent facts not present in the
 text."""
