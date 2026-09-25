@@ -190,9 +190,16 @@ def test_r3_supersession_chain_required_deferred_required(
 
     relations = (
         db.query(ContextRelations)
-        .filter(ContextRelations.relation == "supersedes")
+        .filter(
+            ContextRelations.relation == "supersedes",
+            ContextRelations.from_id.in_([o1.id, o2.id, o3.id]),
+        )
         .all()
     )
+    # scoped to this test's own objects — `context_relations` has no tenant_id column to
+    # filter by directly, and an unscoped query here picks up unrelated `supersedes` edges
+    # from concurrent activity against the same shared dev Postgres (e.g. another test run,
+    # or someone resolving a conflict through the dashboard while this suite runs).
     assert {(r.from_id, r.to_id) for r in relations} == {(o2.id, o1.id), (o3.id, o2.id)}
 
     conflicting = (
@@ -357,13 +364,29 @@ def test_dedup_auto_links_near_identical_compatible_statements(
     assert first.status == "active"
     assert second.status == "active"
 
-    dup_relations = db.query(ContextRelations).filter(ContextRelations.relation == "duplicate_of").all()
+    # scoped to this test's own objects (see the comment in
+    # test_r3_supersession_chain_required_deferred_required for why).
+    dup_relations = (
+        db.query(ContextRelations)
+        .filter(
+            ContextRelations.relation == "duplicate_of",
+            ContextRelations.from_id.in_([first.id, second.id]),
+        )
+        .all()
+    )
     assert len(dup_relations) == 1
     assert dup_relations[0].resolved_at is not None  # auto-resolved
     assert dup_relations[0].from_id == first.id  # lower authority is the duplicate
     assert dup_relations[0].to_id == second.id  # higher authority is canonical
 
-    supported = db.query(ContextRelations).filter(ContextRelations.relation == "supported_by").all()
+    supported = (
+        db.query(ContextRelations)
+        .filter(
+            ContextRelations.relation == "supported_by",
+            ContextRelations.from_id.in_([first.id, second.id]),
+        )
+        .all()
+    )
     assert len(supported) == 1
     assert supported[0].from_id == second.id
 
@@ -397,7 +420,16 @@ def test_dedup_candidate_band_routes_to_review(db_session: tuple[Session, uuid.U
     assert first.status == "active"
     assert second.status == "active"
 
-    dup_relations = db.query(ContextRelations).filter(ContextRelations.relation == "duplicate_of").all()
+    # scoped to this test's own objects (see the comment in
+    # test_r3_supersession_chain_required_deferred_required for why).
+    dup_relations = (
+        db.query(ContextRelations)
+        .filter(
+            ContextRelations.relation == "duplicate_of",
+            ContextRelations.from_id.in_([first.id, second.id]),
+        )
+        .all()
+    )
     assert len(dup_relations) == 1
     assert dup_relations[0].resolved_at is None  # pending review
 

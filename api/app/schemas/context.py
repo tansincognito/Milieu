@@ -102,6 +102,7 @@ class EntityOut(BaseModel):
     kind: str
     source_counts: dict[str, int]
     open_conflicts: int
+    open_gaps: int = 0
 
 
 class EntityContextGroupOut(BaseModel):
@@ -127,5 +128,54 @@ class ReviewRequest(BaseModel):
 class ConflictResolveRequest(BaseModel):
     resolution: Literal["winner", "both_superseded"]
     winner_id: uuid.UUID | None = None
+    reviewer_id: uuid.UUID | None = None
+    note: str | None = None
+
+
+class ConflictPairOut(BaseModel):
+    """Pairs an open `contradicts` relation with both objects, so the review queue can
+    resolve a conflict without a client-side join (§15 POST /conflicts/{id}/resolve needs
+    a relation_id, which the flat object list from /context/search does not expose)."""
+
+    relation_id: uuid.UUID
+    from_object: ContextObjectOut
+    to_object: ContextObjectOut
+    created_at: datetime
+
+
+class SourceOut(BaseModel):
+    """Full source record for the detail panel's evidence highlight (§17.3). Redacted to
+    `{kind, stage, source_ts}` per §14 when the source's ACL doesn't intersect the caller's
+    principals — mirrors the redaction already applied to `ContextObjectOut.source`."""
+
+    id: uuid.UUID
+    kind: str
+    stage: str | None
+    source_ts: datetime
+    text: str | None
+    provenance: dict[str, Any] | None = None
+
+
+class GapOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    validation_id: uuid.UUID
+    contract_field: str
+    upstream_id: uuid.UUID
+    downstream_id: uuid.UUID | None
+    slot: str | None
+    outcome: str
+    severity: float
+    severity_band: str
+    inherited: bool
+    explanation: str
+    status: str
+    upstream: ContextObjectOut | None = None
+    downstream: ContextObjectOut | None = None
+
+
+class GapReviewRequest(BaseModel):
+    action: Literal["confirm", "ignore"]  # "confirm" = accept the gap, per §15 "Accept / ignore gap"
     reviewer_id: uuid.UUID | None = None
     note: str | None = None

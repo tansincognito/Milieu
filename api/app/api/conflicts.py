@@ -1,20 +1,85 @@
 """§15 POST /conflicts/{relation_id}/resolve — §7.3 R5 human resolution: pick a winner
 (loser -> superseded) or supersede both (neither statement stands, e.g. a bad duplicate
-pairing). Every resolution writes an append-only `reviews` row."""
+pairing). Every resolution writes an append-only `reviews` row.
+
+GET /conflicts is a dashboard addition: the review queue (§17.5) needs the `relation_id`
+to call the resolve endpoint above, but /context/search and /entities/{id}/context only
+return a flat list of `conflicting` objects with no relation id. This pairs each open
+`contradicts` relation with both of its objects."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.api.context import context_object_to_out
+from app.api.permissions import acl_visible
 from app.core.db import get_db
-from app.models.orm import ContextObjects, ContextRelations, ContextVersions, Reviews
-from app.schemas.context import ConflictResolveRequest
+from app.models.orm import (
+    ContextObjects,
+    ContextRelations,
+    ContextVersions,
+    Entities,
+    Reviews,
+    Sources,
+)
+from app.schemas.context import ConflictPairOut, ConflictResolveRequest
 
 router = APIRouter()
+
+
+@router.get("/conflicts", response_model=list[ConflictPairOut])
+def list_conflicts(
+    entity: str | None = Query(default=None, description="entity id or slug"),
+    principal: list[str] | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> list[ConflictPairOut]:
+    query = db.query(ContextRelations).filter(
+        ContextRelations.relation == "contradicts", ContextRelations.resolved_at.is_(None)
+    )
+    relations = query.order_by(ContextRelations.created_at.desc()).all()
+
+    entity_id: uuid.UUID | None = None
+    if entity is not None:
+        try:
+            entity_id = uuid.UUID(entity)
+        except ValueError:
+            entity_row = db.query(Entities).filter(Entities.slug == entity).first()
+            if entity_row is None:
+                return []
+            entity_id = entity_row.id
+
+    out: list[ConflictPairOut] = []
+    for relation in relations:
+        a = db.get(ContextObjects, relation.from_id)
+        b = db.get(ContextObjects, relation.to_id)
+        if a is None or b is None:
+            continue
+        if entity_id is not None and entity_id not in (a.entity_id, b.entity_id):
+            continue
+        a_source = db.get(Sources, a.source_id)
+        b_source = db.get(Sources, b.source_id)
+        # ACL-filter: only surface the pair if at least one side is visible to the caller.
+        visible = (
+            db.query(ContextObjects)
+            .join(Sources, ContextObjects.source_id == Sources.id)
+            .filter(ContextObjects.id.in_([a.id, b.id]), acl_visible(principal))
+            .count()
+        )
+        if visible == 0:
+            continue
+        out.append(
+            ConflictPairOut(
+                relation_id=relation.id,
+                from_object=context_object_to_out(a, a_source, principal),
+                to_object=context_object_to_out(b, b_source, principal),
+                created_at=relation.created_at,
+            )
+        )
+    return out
 
 
 def _transition(db: Session, obj: ContextObjects, status: str, reason: str, now: datetime) -> None:

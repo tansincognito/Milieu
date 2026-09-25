@@ -12,13 +12,25 @@ from sqlalchemy.orm import Session
 from app.api.context import context_object_to_out
 from app.api.permissions import acl_visible
 from app.core.db import get_db
-from app.models.orm import ContextObjects, Entities, Sources
+from app.models.orm import ContextGaps, ContextObjects, Entities, Sources
 from app.schemas.context import (
     ContextObjectOut,
     EntityContextGroupOut,
     EntityContextOut,
     EntityOut,
 )
+
+
+def _open_gaps(db: Session, entity_id: uuid.UUID) -> int:
+    # §17.1 "counts of open gaps and conflicts". `context_gaps` is only populated once the
+    # Day 3 handoff validator (§10) runs, so this is 0 until then — the count is still
+    # correct against whatever rows exist.
+    return (
+        db.query(ContextGaps)
+        .join(ContextObjects, ContextGaps.upstream_id == ContextObjects.id)
+        .filter(ContextObjects.entity_id == entity_id, ContextGaps.status == "open")
+        .count()
+    )
 
 router = APIRouter()
 
@@ -59,6 +71,7 @@ def list_entities(
                 kind=entity.kind,
                 source_counts=_source_counts(db, entity.id, principal),
                 open_conflicts=open_conflicts,
+                open_gaps=_open_gaps(db, entity.id),
             )
         )
     return out
@@ -105,6 +118,7 @@ def get_entity_context(
             kind=entity.kind,
             source_counts=_source_counts(db, entity.id, principal),
             open_conflicts=len(conflicting_objects),
+            open_gaps=_open_gaps(db, entity.id),
         ),
         current=[EntityContextGroupOut(type=t, objects=objs) for t, objs in grouped.items()],
         conflicts=[_out(o) for o in conflicting_objects],
