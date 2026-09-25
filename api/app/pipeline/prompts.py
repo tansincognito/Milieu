@@ -46,7 +46,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-PROMPT_VERSION = "6"
+PROMPT_VERSION = "7"
 
 CAPABILITY_VOCAB = (
     "sso, scim, audit_logs, data_residency, rbac, api_access, uptime_sla, pricing, "
@@ -226,11 +226,15 @@ Other rules:
 8. `confidence` (0-1) is how sure you are the text actually says this — not how important it
    is.
 9. If the "one part of" note at the end of this prompt says another section of the same
-   document already established a subject (a `subject_capability`, and for incidents an
+   document already established a specific incident (`subject_capability="incident"` plus an
    `attributes.extra.incident_id`), use that exact subject for every item you extract from
    this section — do not re-derive `subject_capability` from this section's own paragraph
    in isolation, even when that paragraph alone would suggest something more generic (see
-   the third worked example above).
+   the third worked example above). This binding applies to incidents only: a whole document
+   about one outage describes one incident throughout. It does NOT apply to ordinary
+   documents, where different sections legitimately cover different capabilities (a PRD's
+   "Requirements" section may be about `sso` while its "Provisioning" section is about
+   `scim`) — there, derive each section's capability from its own text as usual.
 
 Return every distinct item as one entry in `items`. Do not invent facts not present in the
 text."""

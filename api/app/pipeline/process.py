@@ -96,6 +96,13 @@ def _sibling_subject_key(db: Session, tenant_id: uuid.UUID, source: Sources) -> 
     correctly. Once a sibling section of the same document has already been persisted under
     a subject_key, later sections are told to bind to that same subject instead of
     re-deriving capability from a weaker, standalone paragraph.
+
+    Only **instance** subjects (`{entity_slug}:incident:{incident_id}`, §4.2) bind this way.
+    A postmortem genuinely is all one incident, so every section belongs to that subject. A
+    capability-level subject must NOT bind: an ordinary document routinely covers several
+    capabilities — `product/acme-prd.md` has a "Requirements" section about SSO and a
+    "Provisioning" section about SCIM — and binding there would collapse `acme:scim` into
+    whichever subject happened to be persisted first.
     """
     document_id = (source.provenance or {}).get("document_id")
     if source.kind != "drive" or not document_id:
@@ -108,6 +115,7 @@ def _sibling_subject_key(db: Session, tenant_id: uuid.UUID, source: Sources) -> 
             Sources.kind == "drive",
             Sources.provenance["document_id"].astext == document_id,
             Sources.id != source.id,
+            ContextObjects.subject_key.like("%:incident:%"),
         )
         .order_by(ContextObjects.created_at.asc())
         .first()

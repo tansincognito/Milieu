@@ -1,4 +1,4 @@
-"""Pure unit tests for the document-context/subject-binding fix (prompt v6, §11):
+"""Pure unit tests for the document-context/subject-binding fix (prompt v7, §11):
 
 Drive documents are split into one source record per section (§6.2), so a section like
 "## Remediation" is extracted in isolation from the rest of its document. These tests lock
@@ -81,4 +81,16 @@ def test_established_subject_is_only_applied_to_drive_sources() -> None:
 def test_prompt_version_was_bumped_for_this_fix() -> None:
     # The extraction cache key includes PROMPT_VERSION (§13.3); forgetting to bump it would
     # mean a source re-extracted after this fix could still serve a pre-fix cached result.
-    assert PROMPT_VERSION == "6"
+    assert PROMPT_VERSION == "7"
+
+
+def test_prompt_scopes_subject_binding_to_incidents_only() -> None:
+    """A document routinely covers several capabilities, so the binding rule must say it
+    applies to incidents only. `product/acme-prd.md` has a "Requirements" section about SSO
+    and a "Provisioning" section about SCIM; binding across those would collapse
+    `acme:scim` into `acme:sso` and destroy the R1 cross-stage SCIM conflict (§7.3, §19.1).
+    """
+    prompt = build_extraction_prompt("drive", "product", date(2026, 9, 25))
+
+    assert "binding applies to incidents only" in prompt
+    assert "derive each section's capability from its own text as usual" in prompt
