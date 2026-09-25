@@ -1,0 +1,79 @@
+# Conflict eval set (§19.2: 3 cases, "contradiction detection vs. supersession", §7.3
+# R1/R2/R4). Covers the three distinct rules that must land `conflicting` rather than
+# silently superseding: a cross-stage stance clash (R1), a lower-authority statement (R2),
+# and a same-stage different-author disagreement with no correction language (R4).
+cases:
+  - id: conflict_r1_scim_cross_stage_stance_clash
+    category: conflict
+    description: >
+      R1: product's "SCIM deferred" (deferred) and engineering's "SCIM work started"
+      (in_progress) are different stages with an incompatible stance pair (deferred x
+      in_progress = conflict per the §7.3 matrix) -- both must land `conflicting`, never
+      silently reconciled.
+    checks:
+      - kind: relation_exists
+        params:
+          relation: contradicts
+          created_by_contains: "R1"
+          from: {source: {kind: drive, path: engineering/acme-implementation-notes.md, heading_contains: SCIM}, subject_key_suffix: ":scim"}
+          to: {source: {kind: drive, path: product/acme-prd.md, heading_contains: Provisioning}, subject_key_suffix: ":scim"}
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: drive, path: product/acme-prd.md, heading_contains: Provisioning}, subject_key_suffix: ":scim"}
+          field: status
+          value: conflicting
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: drive, path: engineering/acme-implementation-notes.md, heading_contains: SCIM}, subject_key_suffix: ":scim"}
+          field: status
+          value: conflicting
+
+  - id: conflict_r2_globex_ae_lower_authority_never_wins
+    category: conflict
+    description: >
+      R2: the AE's internal handoff email restates Globex's region as "US" (authority 2,
+      sales restating the customer) after the customer's own "eu-west-1" call statement
+      (authority 4) is already active. Lower authority never wins by recency -- both must
+      land `conflicting`, and the AE's version must not supersede the customer's.
+    checks:
+      - kind: relation_exists
+        params:
+          relation: contradicts
+          created_by_contains: "R2"
+          from: {source: {kind: email, message_id: internal-globex-handoff-001-msg1}, subject_key_contains: "data_residency"}
+          to: {source: {kind: call, call_id: globex-closing-2026-11-04}, subject_key_contains: "data_residency"}
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: call, call_id: globex-closing-2026-11-04}, subject_key_contains: "data_residency"}
+          field: status
+          value: conflicting
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: call, call_id: globex-closing-2026-11-04}, subject_key_contains: "data_residency"}
+          field: authority
+          value: 4
+
+  - id: conflict_r4_same_stage_different_authors_scim
+    category: conflict
+    description: >
+      R4: PM Casey ("SCIM deferred to Q1") disagrees with PM Sam's most recent SCIM message
+      ("back in scope"/required) in the same #product channel, with no correction language.
+      Two accountable people disagreeing must be surfaced as `conflicting`, never silently
+      resolved by recency (i.e. Casey's later message must NOT supersede Sam's).
+    checks:
+      - kind: relation_exists
+        params:
+          relation: contradicts
+          created_by_contains: "R4"
+          from: {source: {kind: slack, channel: C_PRODUCT, text_contains: "still what's on our roadmap"}, subject_key_suffix: ":scim"}
+          to: {source: {kind: slack, channel: C_PRODUCT, text_contains: "InfoSec flagged manual provisioning"}, subject_key_suffix: ":scim"}
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: slack, channel: C_PRODUCT, text_contains: "still what's on our roadmap"}, subject_key_suffix: ":scim"}
+          field: status
+          value: conflicting
+      - kind: relation_absent
+        params:
+          relation: supersedes
+          from: {source: {kind: slack, channel: C_PRODUCT, text_contains: "still what's on our roadmap"}, subject_key_suffix: ":scim"}
+          to: {source: {kind: slack, channel: C_PRODUCT, text_contains: "InfoSec flagged manual provisioning"}, subject_key_suffix: ":scim"}
