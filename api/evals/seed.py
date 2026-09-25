@@ -16,6 +16,13 @@ Deterministic and reproducible:
   - The extraction cache (Redis, keyed by `sha256(content_hash, prompt_version, model_id,
     schema_version)`, §13.3) is left on and is *not* tenant-scoped, so a second `make eval`
     run reuses cached LLM output instead of re-hitting OpenRouter for unchanged mock data.
+  - Source rows are created directly here (`_create_source_row`), not via
+    `app.pipeline.ingest.ingest_source` -- that function also enqueues into the *shared*
+    `processing_jobs` table, and this dev environment can have a real `app.worker` process
+    polling it with no tenant filter. Going through the shared queue let that worker race
+    this module's own sequential `process_extraction_job` calls for the same source,
+    producing duplicate context objects (confirmed empirically). Bypassing the queue avoids
+    that regardless of what else is running against this Postgres instance.
 
 This intentionally duplicates (rather than imports and reuses) the connector-iteration loop
 in `app.pipeline.load_mock_data`: that function ingests but doesn't return ingestion order,
@@ -45,20 +52,18 @@ from app.core.factories import build_embedding_client, build_llm_client, build_r
 from app.directory.resolve import SqlAlchemyPeopleDirectory
 from app.llm.base import LLMRateLimitedError, LLMValidationError
 from app.models.orm import Sources
-from app.pipeline.ingest import ingest_source
 from app.pipeline.process import process_extraction_job
 from app.pipeline.seed_directory import load_directory, load_slack_channel_stage_map
-from app.queue.base import JobQueue
-from app.queue.postgres import PostgresJobQueue
+from app.schemas.sources import NormalizedSource
 
 # Fixed, dedicated tenant for eval runs -- never the dev default tenant
 # (00000000-0000-0000-0000-000000000001), so `make eval` never collides with whatever a
 # developer has loaded through `POST /sources/mock/load` in their own manual testing.
 EVAL_TENANT_ID = uuid.UUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 
-MAX_ATTEMPTS = 4
-BACKOFF_BASE_SECONDS = 4.0
-BACKOFF_MAX_SECONDS = 45.0
+MAX_ATTEMPTS = 6
+BACKOFF_BASE_SECONDS = 5.0
+BACKOFF_MAX_SECONDS = 90.0
 
 _INFRA_EXCEPTIONS = (
     LLMRateLimitedError,
@@ -125,14 +130,65 @@ def _wipe_tenant(db: Session, tenant_id: uuid.UUID) -> None:
     )
     db.execute(text("DELETE FROM sources WHERE tenant_id = :t"), t)
     db.execute(text("DELETE FROM entity_aliases WHERE tenant_id = :t"), t)
-    db.execute(text("DELETE FROM entities WHERE tenant_id = :t"), t)
-    db.execute(text("DELETE FROM org_domains WHERE tenant_id = :t"), t)
+    # `people.company_entity_id` and `org_domains.entity_id` both FK -> entities, so both
+    # must go before `entities` itself (the wrong order 500s with a FK violation on any
+    # rerun, since the directory seed always links Dana Kim/Jamie Fox to their entities).
     db.execute(text("DELETE FROM people WHERE tenant_id = :t"), t)
+    db.execute(text("DELETE FROM org_domains WHERE tenant_id = :t"), t)
+    db.execute(text("DELETE FROM entities WHERE tenant_id = :t"), t)
     db.commit()
 
 
+def _create_source_row(
+    db: Session, tenant_id: uuid.UUID, normalized: NormalizedSource
+) -> tuple[uuid.UUID, bool]:
+    """Same normalize -> hash -> dedupe -> insert as `app.pipeline.ingest.ingest_source`,
+    *without* its `queue.enqueue(...)` side effect.
+
+    Deliberately not calling `ingest_source` here: this repo's dev environment has a real
+    `app.worker` process polling the *shared* `processing_jobs` table with no tenant
+    filter (`PostgresJobQueue.claim` claims the oldest queued job of a given `job_type`,
+    full stop). Enqueuing through it means that worker can race this function's own
+    sequential `process_extraction_job` calls below for the exact same source -- both
+    would hit the (tenant-scoped, content-hash-keyed) extraction cache, and both would
+    happily persist their own copy of the resulting context objects, so every source ends
+    up double-created. Confirmed empirically: a run produced exact-duplicate
+    `context_objects` rows (same content, different ids) for sources processed while that
+    worker was live. Bypassing the shared queue entirely removes the race regardless of
+    what else is running against this Postgres instance at eval time."""
+    existing = (
+        db.query(Sources)
+        .filter(
+            Sources.tenant_id == tenant_id,
+            Sources.kind == normalized.kind,
+            Sources.external_id == normalized.external_id,
+            Sources.content_hash == normalized.content_hash,
+        )
+        .first()
+    )
+    if existing is not None:
+        return existing.id, False
+
+    source = Sources(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        kind=normalized.kind,
+        external_id=normalized.external_id,
+        version=normalized.version,
+        content_hash=normalized.content_hash,
+        stage=normalized.stage,
+        acl=normalized.acl,
+        provenance=normalized.provenance.model_dump(mode="json"),
+        text=normalized.text,
+        source_ts=normalized.source_ts,
+    )
+    db.add(source)
+    db.commit()
+    return source.id, True
+
+
 def _ordered_ingest(
-    db: Session, queue: JobQueue, tenant_id: uuid.UUID, mock_data_dir: Path
+    db: Session, tenant_id: uuid.UUID, mock_data_dir: Path
 ) -> tuple[dict[str, int], list[uuid.UUID]]:
     """Mirrors `load_mock_data`'s connector order exactly, but also returns the created
     source ids in strict ingestion order (drive -> call -> email -> slack; within each,
@@ -150,12 +206,7 @@ def _ordered_ingest(
         MockSlackSeedConnector(mock_data_dir / "slack" / "seed.json", channel_stage_map),
     ]
 
-    counts = {
-        "sources_created": 0,
-        "sources_skipped": 0,
-        "jobs_enqueued": 0,
-        "consent_rejected": 0,
-    }
+    counts = {"sources_created": 0, "sources_skipped": 0, "consent_rejected": 0}
     ordered_ids: list[uuid.UUID] = []
     for connector in connectors:
         for raw in connector.fetch(None):
@@ -164,13 +215,9 @@ def _ordered_ingest(
             except ConsentNotGivenError:
                 counts["consent_rejected"] += 1
                 continue
-            source_id, was_new = ingest_source(db, queue, tenant_id, normalized)
+            source_id, was_new = _create_source_row(db, tenant_id, normalized)
             ordered_ids.append(source_id)
-            if was_new:
-                counts["sources_created"] += 1
-                counts["jobs_enqueued"] += 1
-            else:
-                counts["sources_skipped"] += 1
+            counts["sources_created" if was_new else "sources_skipped"] += 1
 
     return counts, ordered_ids
 
@@ -233,10 +280,7 @@ def run_seeded_ingest(
     try:
         _wipe_tenant(db, EVAL_TENANT_ID)
 
-        queue: JobQueue = PostgresJobQueue(session_factory)
-        load_counts, ordered_source_ids = _ordered_ingest(
-            db, queue, EVAL_TENANT_ID, mock_data_dir
-        )
+        load_counts, ordered_source_ids = _ordered_ingest(db, EVAL_TENANT_ID, mock_data_dir)
 
         llm = build_llm_client(settings)
         embedder = build_embedding_client(settings)
