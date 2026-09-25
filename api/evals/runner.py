@@ -118,6 +118,10 @@ def main() -> int:
         print(f"WARNING: {len(report.extraction_failures)} source(s) hit extraction failures:")
         for s in report.extraction_failures:
             print(f"  - {s.kind}:{s.external_id}: {s.error}")
+    if report.harness_errors:
+        print(f"WARNING: {len(report.harness_errors)} source(s) hit a harness (not pipeline) bug:")
+        for s in report.harness_errors:
+            print(f"  - {s.kind}:{s.external_id}: {s.error}")
 
     cases = load_cases()
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
@@ -129,15 +133,16 @@ def main() -> int:
 
     _print_table(results)
 
-    any_infra_issue = bool(report.infra_failures)
+    any_infra_issue = bool(report.infra_failures) or bool(report.harness_errors)
     any_real_failure = any(not r.passed for r in results)
 
     if any_infra_issue:
         print(
             f"NOTE: {len(report.infra_failures)} source(s) never finished extraction due to "
-            "infra failures (OpenRouter rate limits/timeouts), not engine bugs. Any case "
-            "failures above whose [SELECTOR] detail names one of those sources may be a "
-            "downstream consequence of that infra gap, not a pipeline defect."
+            f"infra failures (OpenRouter rate limits/timeouts) and {len(report.harness_errors)} "
+            "hit a harness-side bug -- neither is an engine bug. Any case failure above whose "
+            "[SELECTOR] detail names one of those sources may be a downstream consequence of "
+            "that gap, not a pipeline defect."
         )
 
     if any_real_failure:

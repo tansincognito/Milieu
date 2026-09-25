@@ -79,7 +79,7 @@ class SourceIngestResult:
     source_id: uuid.UUID
     kind: str
     external_id: str
-    status: str  # "done" | "infra_failed" | "extraction_failed"
+    status: str  # "done" | "infra_failed" | "extraction_failed" | "harness_error"
     attempts: int
     objects_created: int
     error: str | None = None
@@ -94,6 +94,10 @@ class IngestReport:
     @property
     def infra_failures(self) -> list[SourceIngestResult]:
         return [s for s in self.sources if s.status == "infra_failed"]
+
+    @property
+    def harness_errors(self) -> list[SourceIngestResult]:
+        return [s for s in self.sources if s.status == "harness_error"]
 
     @property
     def extraction_failures(self) -> list[SourceIngestResult]:
@@ -225,11 +229,19 @@ def _ordered_ingest(
 def _process_with_retry(
     db: Session, redis_client, llm, embedder, settings: Settings, tenant_id: uuid.UUID, source: Sources
 ) -> SourceIngestResult:
+    # Captured once, up front, as plain values: `db.rollback()` below expires every ORM
+    # object attached to this session (default `expire_on_commit`-adjacent behavior also
+    # applies on rollback), and re-touching `source.<attr>` afterwards -- on a *later*
+    # retry iteration, after a *second* rollback -- was observed to intermittently raise
+    # `sqlalchemy.orm.exc.ObjectDeletedError` on a live run under heavy contention. `source`
+    # itself is only ever used for the one `.id` read below, before any rollback happens.
+    source_id, source_kind, source_external_id = source.id, source.kind, source.external_id
+
     last_error: str | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             created = process_extraction_job(
-                db, redis_client, llm, embedder, settings, tenant_id, source.id
+                db, redis_client, llm, embedder, settings, tenant_id, source_id
             )
         except LLMRateLimitedError as exc:
             db.rollback()
@@ -251,17 +263,17 @@ def _process_with_retry(
                 # A schema-validation or pipeline failure that repeats on retry is a real
                 # (reproducible) failure, not free-tier flakiness -- stop retrying it.
                 return SourceIngestResult(
-                    source.id, source.kind, source.external_id, "extraction_failed", attempt, 0, last_error
+                    source_id, source_kind, source_external_id, "extraction_failed", attempt, 0, last_error
                 )
             time.sleep(BACKOFF_BASE_SECONDS)
             continue
         else:
             return SourceIngestResult(
-                source.id, source.kind, source.external_id, "done", attempt, created
+                source_id, source_kind, source_external_id, "done", attempt, created
             )
 
     return SourceIngestResult(
-        source.id, source.kind, source.external_id, "infra_failed", MAX_ATTEMPTS, 0, last_error
+        source_id, source_kind, source_external_id, "infra_failed", MAX_ATTEMPTS, 0, last_error
     )
 
 
@@ -290,16 +302,29 @@ def run_seeded_ingest(
         for source_id in ordered_source_ids:
             source = db.get(Sources, source_id)
             assert source is not None
-            result = _process_with_retry(
-                db, redis_client, llm, embedder, settings, EVAL_TENANT_ID, source
-            )
+            try:
+                result = _process_with_retry(
+                    db, redis_client, llm, embedder, settings, EVAL_TENANT_ID, source
+                )
+            except Exception as exc:  # noqa: BLE001 - last-resort safety net, see below
+                # A bug in the harness's own retry logic (not the pipeline under test)
+                # must not abort the whole ~50-source run and lose every result gathered
+                # so far -- record it and move on to the next source.
+                db.rollback()
+                result = SourceIngestResult(
+                    source_id, source.kind, source.external_id, "harness_error", 0, 0,
+                    f"harness bug ({type(exc).__name__}): {exc}",
+                )
             report.sources.append(result)
             if verbose:
-                marker = {"done": "OK", "infra_failed": "INFRA-FAIL", "extraction_failed": "FAIL"}[
-                    result.status
-                ]
+                marker = {
+                    "done": "OK",
+                    "infra_failed": "INFRA-FAIL",
+                    "extraction_failed": "FAIL",
+                    "harness_error": "HARNESS-BUG",
+                }[result.status]
                 print(
-                    f"  [{marker:10}] {source.kind:6} {source.external_id:55} "
+                    f"  [{marker:10}] {result.kind:6} {result.external_id:55} "
                     f"-> {result.objects_created} objects (attempts={result.attempts})"
                 )
                 if result.error:
