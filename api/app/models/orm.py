@@ -42,7 +42,15 @@ CONTEXT_TYPES = (
     "resolution",
     "dependency",
 )
-ACTOR_ROLES = ("customer", "sales", "product", "engineering", "other", "system")
+ACTOR_ROLES = (
+    "customer",
+    "sales",
+    "product",
+    "engineering",
+    "customer_success",
+    "other",
+    "system",
+)
 CONTEXT_STATUSES = ("candidate", "active", "conflicting", "superseded", "stale", "ignored")
 SOURCE_KINDS = ("slack", "email", "drive", "call", "api")
 JOB_STATUSES = ("queued", "running", "done", "failed", "poison")
