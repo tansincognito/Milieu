@@ -16,6 +16,10 @@ dependencies = [
     "fastembed>=0.4",
     "python-dotenv>=1.0",
     "pgvector>=0.5.0",
+    # The eval harness (§19) loads its cases from YAML. It was working on a transitive
+    # pyyaml pulled in by another package, which would break the moment that package drops
+    # it, so declare it.
+    "pyyaml>=6.0",
 ]
 
 [dependency-groups]
