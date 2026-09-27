@@ -64,11 +64,11 @@ cases:
     checks:
       - kind: object_field_equals
         params:
-          object: {source: {kind: call, call_id: globex-closing-2026-11-04}, evidence_quote_contains: "Salesforce integration"}
+          object: {source: {kind: call, call_id: globex-closing-2026-11-04}, type: requirement, evidence_quote_contains: "Salesforce integration"}
           field: status
           value: active
       - kind: object_field_equals
         params:
-          object: {source: {kind: call, call_id: globex-closing-2026-11-04}, evidence_quote_contains: "Salesforce integration"}
+          object: {source: {kind: call, call_id: globex-closing-2026-11-04}, type: requirement, evidence_quote_contains: "Salesforce integration"}
           field: version
           value: 1

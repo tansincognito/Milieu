@@ -73,6 +73,7 @@ cases:
         params:
           objects:
             - source: {kind: call, call_id: globex-closing-2026-11-04}
+              type: requirement
               subject_key_suffix: ":onboarding"
             - source: {kind: drive, path: customer_success/globex-onboarding-plan.md, heading_contains: Timeline}
               subject_key_suffix: ":onboarding"
@@ -80,6 +81,7 @@ cases:
         params:
           a:
             source: {kind: call, call_id: globex-closing-2026-11-04}
+            type: requirement
             subject_key_suffix: ":onboarding"
           b:
             source: {kind: call, call_id: acme-discovery-2026-10-02}
