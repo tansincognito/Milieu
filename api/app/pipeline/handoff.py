@@ -113,34 +113,34 @@ def _is_set(value: Any) -> bool:
     return True
 
 
-def _normalize(value: Any) -> Any:
+def normalize_value(value: Any) -> Any:
     if value is None:
         return None
     if isinstance(value, str):
         return value.strip().lower()
     if isinstance(value, (list, tuple)):
-        return tuple(sorted(_normalize(v) for v in value))
+        return tuple(sorted(normalize_value(v) for v in value))
     if isinstance(value, dict):
-        return tuple(sorted((k, _normalize(v)) for k, v in value.items()))
+        return tuple(sorted((k, normalize_value(v)) for k, v in value.items()))
     return value
 
 
-def _capability_of(subject_key: str) -> str:
+def capability_of(subject_key: str) -> str:
     parts = subject_key.split(":")
     return parts[1] if len(parts) > 1 else subject_key
 
 
-def _protocol_generalizes(capability: str, upstream_protocol: Any) -> bool:
+def protocol_generalizes(capability: str, upstream_protocol: Any) -> bool:
     children = CAPABILITY_GENERALIZES.get(capability, set())
-    return _normalize(upstream_protocol) in children
+    return normalize_value(upstream_protocol) in children
 
 
-def _region_generalizes(upstream_region_norm: Any, downstream_region_norm: Any) -> bool:
+def region_generalizes(upstream_region_norm: Any, downstream_region_norm: Any) -> bool:
     narrow = REGION_HIERARCHY.get(downstream_region_norm, set())
     return upstream_region_norm in narrow
 
 
-def _is_equivalent(slot: str, nu: Any, nd: Any) -> bool:
+def is_equivalent(slot: str, nu: Any, nd: Any) -> bool:
     for group in SLOT_EQUIVALENTS.get(slot, []):
         if nu in group and nd in group:
             return True
@@ -161,7 +161,7 @@ class GapDraft:
     explanation: str
 
 
-def _severity(importance: str, authority: int, outcome: Outcome) -> tuple[float, str]:
+def severity(importance: str, authority: int, outcome: Outcome) -> tuple[float, str]:
     value = (
         IMPORTANCE_WEIGHT[importance]
         * AUTHORITY_WEIGHT.get(authority, 0.1)
@@ -282,12 +282,12 @@ def _find_stale_reference(
     )
     for cand in candidates:
         val = (cand.attributes or {}).get(slot)
-        if _is_set(val) and _normalize(val) == nd_value:
+        if _is_set(val) and normalize_value(val) == nd_value:
             return cand
     return None
 
 
-def _classify_slot(
+def classify_slot(
     *,
     db: Session,
     slot: str,
@@ -304,16 +304,16 @@ def _classify_slot(
         # while the *subject itself* is the generalized form (protocol SAML -> capability
         # sso), or the downstream statement only carries a coarser period (due_date_
         # precision set, no exact date) rather than nothing at all.
-        if slot == "protocol" and _protocol_generalizes(_capability_of(subject_key), u_val):
-            return "generalized", f"downstream targets the broader capability `{_capability_of(subject_key)}`"
+        if slot == "protocol" and protocol_generalizes(capability_of(subject_key), u_val):
+            return "generalized", f"downstream targets the broader capability `{capability_of(subject_key)}`"
         if slot == "due_date" and _is_set(d_attrs.get("due_date_precision")):
             return "generalized", f"downstream only states `{d_attrs['due_date_precision']}` precision"
         return "missing", None
 
-    nu, nd = _normalize(u_val), _normalize(d_val)
+    nu, nd = normalize_value(u_val), normalize_value(d_val)
     if nu == nd:
         return None  # preserved
-    if _is_equivalent(slot, nu, nd):
+    if is_equivalent(slot, nu, nd):
         return None  # equivalent — different wording, same meaning; no gap
 
     stale = _find_stale_reference(db, eff_obj, slot, nd)
@@ -324,12 +324,12 @@ def _classify_slot(
         # d_val is set but differs from u_val: generalized only if the downstream value IS
         # the broader capability name itself (e.g. protocol="SSO"); a sibling protocol
         # (SAML vs OIDC) is a contradiction, not a generalization.
-        if nd == _capability_of(subject_key):
+        if nd == capability_of(subject_key):
             return "generalized", None
         return "contradicted", None
 
     if slot == "region":
-        if _region_generalizes(nu, nd):
+        if region_generalizes(nu, nd):
             return "generalized", None
         return "contradicted", None
 
@@ -338,8 +338,8 @@ def _classify_slot(
 
     if slot in _DICT_SLOT_KEY:
         key = _DICT_SLOT_KEY[slot]
-        u_sub = _normalize((u_val or {}).get(key)) if isinstance(u_val, dict) else None
-        d_sub = _normalize((d_val or {}).get(key)) if isinstance(d_val, dict) else None
+        u_sub = normalize_value((u_val or {}).get(key)) if isinstance(u_val, dict) else None
+        d_sub = normalize_value((d_val or {}).get(key)) if isinstance(d_val, dict) else None
         if u_sub == d_sub:
             return None
         return "contradicted", f"`{key}` differs"
@@ -421,7 +421,7 @@ def _validate_propagate_field(
         d = _downstream_counterpart(db, tenant_id, entity_id, contract.to_stage, subject_key, field.types)
 
         if d is None:
-            severity, band = _severity(field.importance, u.authority, "object_missing")
+            severity_value, band = severity(field.importance, u.authority, "object_missing")
             out.append(
                 GapDraft(
                     contract_field=field.name,
@@ -429,7 +429,7 @@ def _validate_propagate_field(
                     downstream_id=None,
                     slot=None,
                     outcome="object_missing",
-                    severity=severity,
+                    severity=severity_value,
                     severity_band=band,
                     inherited=False,
                     upstream_conflict=upstream_conflict,
@@ -446,14 +446,14 @@ def _validate_propagate_field(
             if not _is_set(u_val):
                 continue
             d_val = (d.attributes or {}).get(slot)
-            result = _classify_slot(
+            result = classify_slot(
                 db=db, slot=slot, subject_key=u.subject_key, u_val=u_val, d_val=d_val,
                 d_attrs=d.attributes or {}, eff_obj=eff_obj,
             )
             if result is None:
                 continue
             outcome, note = result
-            severity, band = _severity(field.importance, eff_obj.authority, outcome)
+            severity_value, band = severity(field.importance, eff_obj.authority, outcome)
             out.append(
                 GapDraft(
                     contract_field=field.name,
@@ -461,7 +461,7 @@ def _validate_propagate_field(
                     downstream_id=d.id,
                     slot=slot,
                     outcome=outcome,
-                    severity=severity,
+                    severity=severity_value,
                     severity_band=band,
                     inherited=walked_up,
                     upstream_conflict=upstream_conflict,
@@ -495,7 +495,7 @@ def _validate_present_field(
     )
 
     def _draft(obj: ContextObjects, slot: str | None, reason: str) -> GapDraft:
-        severity, band = _severity(field.importance, obj.authority, "missing")
+        severity_value, band = severity(field.importance, obj.authority, "missing")
         explanation = (
             f"**Missing evidence link** — downstream {obj.type} \"{obj.content}\" "
             f"({obj.stage} {obj.valid_from.date().isoformat()}) {reason}. "
@@ -503,7 +503,7 @@ def _validate_present_field(
         )
         return GapDraft(
             contract_field=field.name, upstream_id=None, downstream_id=obj.id, slot=slot,
-            outcome="missing", severity=severity, severity_band=band, inherited=False,
+            outcome="missing", severity=severity_value, severity_band=band, inherited=False,
             upstream_conflict=False, explanation=explanation,
         )
 
