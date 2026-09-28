@@ -55,6 +55,15 @@ CONTEXT_STATUSES = ("candidate", "active", "conflicting", "superseded", "stale",
 SOURCE_KINDS = ("slack", "email", "drive", "call", "api")
 JOB_STATUSES = ("queued", "running", "done", "failed", "poison")
 GAP_STATUSES = ("open", "ignored", "resolved")
+GAP_OUTCOMES = (
+    "preserved",
+    "equivalent",
+    "generalized",
+    "missing",
+    "contradicted",
+    "object_missing",
+    "stale_reference",
+)
 REVIEW_ACTIONS = ("confirm", "edit", "ignore", "resolve_conflict", "mark_stale")
 RELATION_KINDS = (
     "derived_from",
@@ -316,8 +325,11 @@ class ContextGaps(Base):
         UUID(as_uuid=True), ForeignKey("handoff_validations.id"), nullable=False
     )
     contract_field: Mapped[str] = mapped_column(String, nullable=False)
-    upstream_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("context_objects.id"), nullable=False
+    # Nullable: `present`-check gaps (§9's has_derived_from/has_customer_contact/
+    # acceptance-criteria rules) have no upstream counterpart to compare against — see
+    # migration 0004.
+    upstream_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("context_objects.id"), nullable=True
     )
     downstream_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("context_objects.id"), nullable=True
@@ -327,10 +339,16 @@ class ContextGaps(Base):
     severity: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False)
     severity_band: Mapped[str] = mapped_column(String, nullable=False)
     inherited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # §10.1 step 1: "the gap is tagged upstream_conflict so the report shows that the
+    # error started inside the upstream stage" — see migration 0004.
+    upstream_conflict: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="open")
 
-    __table_args__ = (CheckConstraint(f"status IN {GAP_STATUSES}", name="ck_context_gaps_status"),)
+    __table_args__ = (
+        CheckConstraint(f"status IN {GAP_STATUSES}", name="ck_context_gaps_status"),
+        CheckConstraint(f"outcome IN {GAP_OUTCOMES}", name="ck_context_gaps_outcome"),
+    )
 
 
 class Reviews(Base):

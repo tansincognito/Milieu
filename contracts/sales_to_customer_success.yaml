@@ -1,0 +1,19 @@
+id: sales_to_customer_success
+from_stage: sales
+to_stage: customer_success
+fields:
+  - name: requirements
+    check: propagate
+    types: [requirement, constraint]
+    slots: [region, quantity, integrations, plan, due_date]
+    importance: critical
+  - name: commitments
+    check: propagate
+    types: [commitment]
+    slots: [due_date, plan]
+    importance: critical
+  - name: contacts
+    check: present
+    types: [dependency]
+    rule: has_customer_contact
+    importance: normal

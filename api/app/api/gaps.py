@@ -40,14 +40,21 @@ def list_gaps(
 
     query = db.query(ContextGaps).filter(ContextGaps.status == (status or "open"))
     if entity_id is not None:
-        query = query.join(ContextObjects, ContextGaps.upstream_id == ContextObjects.id).filter(
+        # `upstream_id` is nullable (present-check gaps have no upstream counterpart, see
+        # migration 0004), so scope to entity via a subquery over both sides rather than an
+        # inner join on upstream_id alone, which would silently drop those rows.
+        entity_object_ids = db.query(ContextObjects.id).filter(
             ContextObjects.entity_id == entity_id
+        )
+        query = query.filter(
+            ContextGaps.upstream_id.in_(entity_object_ids)
+            | ContextGaps.downstream_id.in_(entity_object_ids)
         )
     gaps = query.order_by(ContextGaps.severity.desc()).all()
 
     out: list[GapOut] = []
     for gap in gaps:
-        upstream = db.get(ContextObjects, gap.upstream_id)
+        upstream = db.get(ContextObjects, gap.upstream_id) if gap.upstream_id else None
         downstream = db.get(ContextObjects, gap.downstream_id) if gap.downstream_id else None
         out.append(
             GapOut(
@@ -61,6 +68,7 @@ def list_gaps(
                 severity=float(gap.severity),
                 severity_band=gap.severity_band,
                 inherited=gap.inherited,
+                upstream_conflict=gap.upstream_conflict,
                 explanation=gap.explanation,
                 status=gap.status,
                 upstream=context_object_to_out(upstream, db.get(Sources, upstream.source_id), principal)

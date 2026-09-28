@@ -162,13 +162,14 @@ class GapOut(BaseModel):
     id: uuid.UUID
     validation_id: uuid.UUID
     contract_field: str
-    upstream_id: uuid.UUID
+    upstream_id: uuid.UUID | None
     downstream_id: uuid.UUID | None
     slot: str | None
     outcome: str
     severity: float
     severity_band: str
     inherited: bool
+    upstream_conflict: bool = False
     explanation: str
     status: str
     upstream: ContextObjectOut | None = None
