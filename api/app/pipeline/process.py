@@ -173,6 +173,52 @@ def _document_context(source: Sources, established_subject_key: str | None = Non
     return None
 
 
+def source_cache_key(
+    settings: Settings, source: Sources, sibling_subject_key: str | None = None
+) -> str:
+    """The §13.3 extraction-cache key for one source under the current prompt and model."""
+    return extraction_cache_key(
+        source.content_hash,
+        PROMPT_VERSION,
+        settings.llm_model,
+        settings.schema_version,
+        sibling_subject_key or "",
+    )
+
+
+def extract_source(
+    redis_client: Redis,
+    llm: LLMClient,
+    settings: Settings,
+    source: Sources,
+    sibling_subject_key: str | None = None,
+) -> ExtractionResult:
+    """The LLM half of the pipeline for one source: cache lookup, prompt, extract, store.
+
+    Split out of `process_extraction_job` because it is the only slow step and the only one
+    that is **order-independent**. Everything after it — dedup, R1-R4, lineage (§7.2, §7.3,
+    §8) — compares a new object against whatever is currently `active`, so it is strictly
+    order-dependent and must stay sequential. Callers that need throughput can therefore run
+    this concurrently over many sources to populate the cache, then replay
+    `process_extraction_job` in the required order, where every call is a cache hit. It
+    touches no `Session`, so it is safe to call from a worker thread.
+    """
+    cache_key = source_cache_key(settings, source, sibling_subject_key)
+    cached = get_cached_extraction(redis_client, cache_key)
+    if cached is not None:
+        return cached
+
+    system = build_extraction_prompt(
+        source.kind,
+        source.stage,
+        source.source_ts,
+        _document_context(source, sibling_subject_key),
+    )
+    result = llm.extract(ExtractionResult, system, source.text)
+    set_cached_extraction(redis_client, cache_key, result)
+    return result
+
+
 def process_extraction_job(
     db: Session,
     redis_client: Redis,
@@ -186,22 +232,13 @@ def process_extraction_job(
     if source is None:
         raise SourceNotFoundError(str(source_id))
 
-    cache_key = extraction_cache_key(
-        source.content_hash, PROMPT_VERSION, settings.llm_model, settings.schema_version
+    # The sibling hint has to be resolved *before* the cache key, because it is part of the
+    # prompt and therefore part of what the cached result represents.
+    sibling_subject_key = _sibling_subject_key(db, tenant_id, source)
+    cache_key = source_cache_key(settings, source, sibling_subject_key)
+    result = extract_source(
+        redis_client, llm, settings, source, sibling_subject_key=sibling_subject_key
     )
-    cached = get_cached_extraction(redis_client, cache_key)
-    if cached is not None:
-        result = cached
-    else:
-        sibling_subject_key = _sibling_subject_key(db, tenant_id, source)
-        system = build_extraction_prompt(
-            source.kind,
-            source.stage,
-            source.source_ts,
-            _document_context(source, sibling_subject_key),
-        )
-        result = llm.extract(ExtractionResult, system, source.text)
-        set_cached_extraction(redis_client, cache_key, result)
 
     directory = SqlAlchemyPeopleDirectory(db)
 

@@ -52,6 +52,7 @@ from app.core.factories import build_embedding_client, build_llm_client, build_r
 from app.directory.resolve import SqlAlchemyPeopleDirectory
 from app.llm.base import LLMRateLimitedError, LLMValidationError
 from app.models.orm import Sources
+from app.pipeline.prewarm import prewarm_extractions
 from app.pipeline.process import process_extraction_job
 from app.pipeline.seed_directory import load_directory, load_slack_channel_stage_map
 from app.schemas.sources import NormalizedSource
@@ -297,6 +298,18 @@ def run_seeded_ingest(
         llm = build_llm_client(settings)
         embedder = build_embedding_client(settings)
         redis_client = build_redis_client(settings)
+
+        # Extraction is order-independent; only dedup/lifecycle/lineage below are not. Run
+        # every LLM call concurrently first so the sequential pass that follows is cache
+        # hits and DB work. The order the lifecycle rules observe is unchanged.
+        if verbose:
+            print(f"pre-warming {len(ordered_source_ids)} extractions concurrently...")
+        prewarm_sources = [db.get(Sources, sid) for sid in ordered_source_ids]
+        warmed, warm_failed = prewarm_extractions(
+            redis_client, llm, settings, [s for s in prewarm_sources if s is not None]
+        )
+        if verbose:
+            print(f"pre-warm: {warmed} cached, {warm_failed} deferred to the sequential pass")
 
         report = IngestReport(tenant_id=EVAL_TENANT_ID, load_counts=load_counts)
         for source_id in ordered_source_ids:
