@@ -108,8 +108,17 @@ def main() -> int:
     elapsed = time.monotonic() - start
     print(
         f"ingest done in {elapsed:0.1f}s: {report.load_counts} "
-        f"-> {report.total_objects} context objects created"
+        f"-> {report.total_objects} context objects created, "
+        f"{report.total_rejected} rejected (evidence-span)"
     )
+    sources_with_rejections = [s for s in report.sources if s.objects_rejected > 0]
+    if sources_with_rejections:
+        print(
+            f"NOTE: {len(sources_with_rejections)} source(s) had extracted item(s) rejected "
+            "on the §4.3 evidence-span check (see per-source warnings above):"
+        )
+        for s in sources_with_rejections:
+            print(f"  - {s.kind}:{s.external_id}: {s.objects_rejected} rejected")
     if report.infra_failures:
         print(f"WARNING: {len(report.infra_failures)} source(s) hit infra failures (see above):")
         for s in report.infra_failures:

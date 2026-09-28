@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from psycopg.types.range import Range
@@ -41,6 +42,24 @@ logger = logging.getLogger(__name__)
 
 class SourceNotFoundError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ExtractionJobResult:
+    """Outcome of processing one source's extraction job.
+
+    `rejected` counts items the LLM returned whose `evidence_quote` failed the §4.3
+    evidence-span check (`EvidenceSpanError`) and were discarded. Before this, the discard
+    path was only a per-item `logger.warning` with nothing counted or returned anywhere --
+    so a completed run could show "0 context objects" for a source and there was no way to
+    tell "the extractor returned nothing" apart from "the extractor returned items that were
+    all silently discarded" (the ambiguity that hid the markdown/em-dash evidence-quote bug
+    behind four requirements-dense drive sections in the 2026-09-28 eval run). Callers
+    (worker, eval harness) surface both counts so that ambiguity can't recur silently.
+    """
+
+    created: int
+    rejected: int
 
 
 def _resolve_actor(
@@ -227,7 +246,7 @@ def process_extraction_job(
     settings: Settings,
     tenant_id: uuid.UUID,
     source_id: uuid.UUID,
-) -> int:
+) -> ExtractionJobResult:
     source = db.get(Sources, source_id)
     if source is None:
         raise SourceNotFoundError(str(source_id))
@@ -245,12 +264,18 @@ def process_extraction_job(
     accepted: list[
         tuple[ExtractedContext, tuple[int, int], str, uuid.UUID | None, uuid.UUID, int, bool]
     ] = []
+    rejected = 0
     for item in result.items:
         try:
             span = compute_evidence_span(source.text, item.evidence_quote)
-        except EvidenceSpanError:
+        except EvidenceSpanError as exc:
+            rejected += 1
             logger.warning(
-                "rejecting extracted object: evidence_quote not found in source %s", source_id
+                "rejecting extracted object: evidence_quote not found in source %s "
+                "(quote=%r): %s",
+                source_id,
+                item.evidence_quote,
+                exc,
             )
             continue
 
@@ -270,9 +295,19 @@ def process_extraction_job(
             (item, span, actor_role, actor_person_id, entity_id, authority, is_new_capability)
         )
 
+    if rejected:
+        logger.warning(
+            "source %s: rejected %d/%d extracted item(s) on the evidence-span check "
+            "(%d accepted)",
+            source_id,
+            rejected,
+            len(result.items),
+            len(accepted),
+        )
+
     if not accepted:
         db.commit()
-        return 0
+        return ExtractionJobResult(created=0, rejected=rejected)
 
     embeddings = embedder.embed([item.content for item, *_ in accepted])
 
@@ -352,4 +387,4 @@ def process_extraction_job(
         created += 1
 
     db.commit()
-    return created
+    return ExtractionJobResult(created=created, rejected=rejected)

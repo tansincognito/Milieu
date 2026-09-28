@@ -145,11 +145,12 @@ def test_acme_call_extraction_end_to_end(db_session: tuple[Session, uuid.UUID]) 
     fake_redis.get.return_value = None  # force a cache miss so the canned LLM is called
     settings = get_settings()
 
-    created = process_extraction_job(
+    result = process_extraction_job(
         db, fake_redis, llm, embedder, settings, tenant_id, source.id
     )
 
-    assert created == 3
+    assert result.created == 3
+    assert result.rejected == 0
     assert llm.calls == 1
     fake_redis.set.assert_called_once()
 

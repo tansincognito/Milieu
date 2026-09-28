@@ -84,6 +84,10 @@ class SourceIngestResult:
     attempts: int
     objects_created: int
     error: str | None = None
+    # Items the extractor returned for this source whose `evidence_quote` failed the §4.3
+    # evidence-span check and were discarded (see `ExtractionJobResult.rejected`). Always 0
+    # for a source that never reached `process_extraction_job` (infra/harness failures).
+    objects_rejected: int = 0
 
 
 @dataclass
@@ -107,6 +111,10 @@ class IngestReport:
     @property
     def total_objects(self) -> int:
         return sum(s.objects_created for s in self.sources)
+
+    @property
+    def total_rejected(self) -> int:
+        return sum(s.objects_rejected for s in self.sources)
 
 
 def _wipe_tenant(db: Session, tenant_id: uuid.UUID) -> None:
@@ -241,7 +249,7 @@ def _process_with_retry(
     last_error: str | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            created = process_extraction_job(
+            job_result = process_extraction_job(
                 db, redis_client, llm, embedder, settings, tenant_id, source_id
             )
         except LLMRateLimitedError as exc:
@@ -270,7 +278,13 @@ def _process_with_retry(
             continue
         else:
             return SourceIngestResult(
-                source_id, source_kind, source_external_id, "done", attempt, created
+                source_id,
+                source_kind,
+                source_external_id,
+                "done",
+                attempt,
+                job_result.created,
+                objects_rejected=job_result.rejected,
             )
 
     return SourceIngestResult(
@@ -336,9 +350,13 @@ def run_seeded_ingest(
                     "extraction_failed": "FAIL",
                     "harness_error": "HARNESS-BUG",
                 }[result.status]
+                rejected_note = (
+                    f", {result.objects_rejected} rejected" if result.objects_rejected else ""
+                )
                 print(
                     f"  [{marker:10}] {result.kind:6} {result.external_id:55} "
-                    f"-> {result.objects_created} objects (attempts={result.attempts})"
+                    f"-> {result.objects_created} objects{rejected_note} "
+                    f"(attempts={result.attempts})"
                 )
                 if result.error:
                     print(f"               {result.error}")
