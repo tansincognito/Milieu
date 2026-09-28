@@ -262,7 +262,7 @@ def process_extraction_job(
     directory = SqlAlchemyPeopleDirectory(db)
 
     accepted: list[
-        tuple[ExtractedContext, tuple[int, int], str, uuid.UUID | None, uuid.UUID, int, bool]
+        tuple[ExtractedContext, tuple[int, int], str, str, uuid.UUID | None, uuid.UUID, int, bool]
     ] = []
     rejected = 0
     for item in result.items:
@@ -279,6 +279,13 @@ def process_extraction_job(
             )
             continue
 
+        # `span` may have been located tolerantly (markdown emphasis, dash/quote variants,
+        # collapsed whitespace -- see `compute_evidence_span`). What gets persisted as
+        # `evidence_quote` is always the ORIGINAL text at that span, never the LLM's own
+        # (possibly normalized) string, so §4.3's `source.text[evidence_span] ==
+        # evidence_quote` holds byte-for-byte on write regardless of how the match was found.
+        resolved_quote = source.text[span[0] : span[1]]
+
         actor_role, actor_person_id = _resolve_actor(source, item, directory, tenant_id)
         entity_id = resolve_entity(db, tenant_id, item.entity_hint)
         authority = assign_authority(
@@ -292,7 +299,16 @@ def process_extraction_job(
             db.flush()
 
         accepted.append(
-            (item, span, actor_role, actor_person_id, entity_id, authority, is_new_capability)
+            (
+                item,
+                span,
+                resolved_quote,
+                actor_role,
+                actor_person_id,
+                entity_id,
+                authority,
+                is_new_capability,
+            )
         )
 
     if rejected:
@@ -316,6 +332,7 @@ def process_extraction_job(
     for (
         item,
         span,
+        resolved_quote,
         actor_role,
         actor_person_id,
         entity_id,
@@ -352,7 +369,7 @@ def process_extraction_job(
             status=status,
             valid_from=source.source_ts,
             source_id=source.id,
-            evidence_quote=item.evidence_quote,
+            evidence_quote=resolved_quote,
             evidence_span=Range(span[0], span[1]),
             embedding=embedding,
             extraction_key=cache_key,
