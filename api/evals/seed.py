@@ -292,6 +292,29 @@ def _process_with_retry(
     )
 
 
+def ingest_sources_only(
+    *, mock_data_dir: Path | None = None, settings: Settings | None = None
+) -> uuid.UUID:
+    """Wipes the eval tenant and re-ingests every mock-data file's raw `sources` rows,
+    stopping *before* extraction (no LLM call). Used by `evals/retrieval_baseline.py`
+    (§19.3): the baseline embeds and judges raw source text directly, so it needs the same
+    ingested `sources` rows `run_seeded_ingest` produces but none of the LLM-extracted
+    `context_objects` — running this instead of the full ingest keeps a `make
+    eval-baseline` run's live-call budget to exactly the baseline's own judge calls, with no
+    dependency on extraction succeeding first."""
+    settings = settings or get_settings()
+    mock_data_dir = mock_data_dir or Path(settings.mock_data_dir)
+
+    session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    db = session_factory()
+    try:
+        _wipe_tenant(db, EVAL_TENANT_ID)
+        _ordered_ingest(db, EVAL_TENANT_ID, mock_data_dir)
+        return EVAL_TENANT_ID
+    finally:
+        db.close()
+
+
 def run_seeded_ingest(
     *, mock_data_dir: Path | None = None, settings: Settings | None = None, verbose: bool = True
 ) -> IngestReport:
