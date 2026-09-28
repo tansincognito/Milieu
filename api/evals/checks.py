@@ -12,7 +12,8 @@ from typing import Any, Protocol
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from app.models.orm import ContextRelations
+from app.models.orm import ContextGaps, ContextRelations
+from evals.handoff_eval import gap_subject_key, latest_validation
 from evals.selectors import (
     SelectorError,
     get_object_field,
@@ -152,6 +153,75 @@ def check_object_count(db: Session, tenant_id: uuid.UUID, params: dict[str, Any]
     return CheckResult(False, f"expected {expected} matching objects, found {len(objects)}")
 
 
+def check_handoff_gap_outcome(db: Session, tenant_id: uuid.UUID, params: dict[str, Any]) -> CheckResult:
+    """§19.2 degradation set: asserts the §10 validator's latest run for
+    `(entity_slug, contract_id)` produced a `context_gaps` row for the `(subject, slot)`
+    triple with the expected `outcome`. `subject_key_suffix`/`subject_key_contains` mirror
+    the selector filters used everywhere else in this harness. `slot: null` (the YAML
+    default) matches an `object_missing`/whole-object gap, which never has a slot (§10.1).
+    Optionally asserts `inherited` (§10.4 chain attribution) when given.
+
+    Requires `evals.handoff_eval.run_required_handoff_validations` to have already run in
+    this process (`evals.runner.main` does this once, before any case runs) -- this check
+    only *reads* the `handoff_validations`/`context_gaps` rows that produced."""
+    entity_slug = params["entity_slug"]
+    contract_id = params["contract_id"]
+    validation = latest_validation(db, tenant_id, entity_slug, contract_id)
+    if validation is None:
+        return CheckResult(
+            False,
+            f"no handoff_validations row for entity={entity_slug!r} contract={contract_id!r} "
+            "-- run_required_handoff_validations either didn't run or the entity/contract "
+            "doesn't exist yet",
+        )
+
+    gaps = db.query(ContextGaps).filter(ContextGaps.validation_id == validation.id).all()
+    suffix = params.get("subject_key_suffix")
+    contains = params.get("subject_key_contains")
+    expected_slot = params.get("slot")
+    expected_inherited = params.get("inherited")
+
+    matches = []
+    for g in gaps:
+        subject_key = gap_subject_key(db, g)
+        if subject_key is None:
+            continue
+        if suffix is not None and not subject_key.endswith(suffix):
+            continue
+        if contains is not None and contains not in subject_key:
+            continue
+        if g.slot != expected_slot:
+            continue
+        matches.append(g)
+
+    expected_outcome = params["outcome"]
+    hits = [g for g in matches if g.outcome == expected_outcome]
+    if expected_inherited is not None:
+        hits = [g for g in hits if g.inherited == expected_inherited]
+
+    if hits:
+        g = hits[0]
+        return CheckResult(
+            True,
+            f"outcome={g.outcome} slot={g.slot!r} inherited={g.inherited} "
+            f"severity={g.severity} ({g.severity_band}): {g.explanation[:80]}...",
+        )
+    if matches:
+        found = [(g.outcome, g.inherited) for g in matches]
+        return CheckResult(
+            False,
+            f"found {len(matches)} matching gap(s) but (outcome, inherited)={found}, "
+            f"expected outcome={expected_outcome!r}"
+            + (f" inherited={expected_inherited}" if expected_inherited is not None else ""),
+        )
+    return CheckResult(
+        False,
+        f"no gap found for entity={entity_slug!r} contract={contract_id!r} "
+        f"subject~{suffix or contains!r} slot={expected_slot!r} "
+        f"(validator produced {len(gaps)} gap(s) total for this handoff)",
+    )
+
+
 CHECKS: dict[str, CheckFn] = {
     "entities_equal": check_entities_equal,
     "entities_distinct": check_entities_distinct,
@@ -159,6 +229,7 @@ CHECKS: dict[str, CheckFn] = {
     "relation_absent": check_relation_absent,
     "object_field_equals": check_object_field_equals,
     "object_count": check_object_count,
+    "handoff_gap_outcome": check_handoff_gap_outcome,
 }
 
 

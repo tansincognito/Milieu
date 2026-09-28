@@ -21,6 +21,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import get_settings
 from app.core.db import engine
 from evals.checks import run_check
+from evals.handoff_eval import (
+    engine_predictions,
+    load_degradation_gold_cases,
+    run_required_handoff_validations,
+)
+from evals.scoring import format_score_table, score
 from evals.seed import run_seeded_ingest
 
 CASES_DIR = Path(__file__).resolve().parent / "cases"
@@ -136,7 +142,27 @@ def main() -> int:
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     db = session_factory()
     try:
+        # §10/§19.2: run the real (deterministic, no-LLM) handoff validator against
+        # whatever the ingest above actually produced, for the four (entity, contract)
+        # pairs the golden tables and the degradation set pin -- before any case (including
+        # the `handoff_gap_outcome` degradation cases) reads `context_gaps`.
+        handoff_report = run_required_handoff_validations(db, report.tenant_id)
+        if handoff_report.errors:
+            print(f"WARNING: {len(handoff_report.errors)} handoff validation(s) could not run:")
+            for err in handoff_report.errors:
+                print(f"  - {err}")
+
         results = [run_case(db, report.tenant_id, case) for case in cases]
+
+        # §19.2: aggregate gap precision/recall for the engine over the same 15 pinned
+        # (subject, slot, handoff) triples the `degradation` cases above already checked
+        # pass/fail on -- printed regardless of whether every case passed, since a partial
+        # score is itself the useful signal when ingest hit infra failures.
+        gold_cases = load_degradation_gold_cases(cases)
+        if gold_cases:
+            preds = engine_predictions(db, report.tenant_id)
+            engine_report = score("engine", gold_cases, preds)
+            print(format_score_table(engine_report))
     finally:
         db.close()
 

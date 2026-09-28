@@ -1,0 +1,266 @@
+# Degradation eval set (§19.2: >=10 cases, >=3 per scenario; measures "Gap precision/recall
+# per outcome"). Each case pins one (subject, slot, handoff) triple straight off the §19.1
+# golden tables -- Golden 1 Acme SSO (G1-G6), Golden 2 Globex onboarding (O3-O6), Golden 3
+# INC-2311 (I2-I6) -- and asserts the §10 validator's real output (run against real,
+# LLM-extracted `context_objects`, not hand-built fixtures) lands on the expected outcome.
+#
+# `evals/handoff_eval.py` reads these same 15 cases' `checks[0].params` as the "gold" side
+# of the §19.2 precision/recall scoring (both the engine's and the retrieval baseline's,
+# §19.3) -- see `evals.runner.main`'s printed DEGRADATION SET tables. Each case must have
+# exactly one `handoff_gap_outcome` check for that reason; add fields to the check's
+# `params`, not extra checks, if a case needs to assert more.
+#
+# `scenario` is metadata only (not read by `checks.py`) -- it documents which golden table a
+# case is drawn from, matching the dispatch's "at least 3 per scenario" framing.
+cases:
+  # --- Golden 1: Acme SSO (sales -> product -> engineering), §19.1 G1-G6 ---------------
+
+  - id: degradation_g1_sales_to_product_protocol_generalized
+    category: degradation
+    scenario: golden1
+    description: >
+      G1: sales->product, acme:sso, protocol SAML -> SSO (vocabulary generalization,
+      origin). The customer's SAML requirement is only carried downstream as the broader
+      capability name "Support SSO" -- no explicit protocol survives on the product PRD.
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: sales_to_product
+          entity_slug: acme
+          subject_key_suffix: ":sso"
+          slot: protocol
+          outcome: generalized
+          inherited: false
+
+  - id: degradation_g2_sales_to_product_idp_missing
+    category: degradation
+    scenario: golden1
+    description: >
+      G2: sales->product, acme:sso, idp "Okta" dropped entirely -- the product PRD never
+      restates which identity provider the customer named.
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: sales_to_product
+          entity_slug: acme
+          subject_key_suffix: ":sso"
+          slot: idp
+          outcome: missing
+          inherited: false
+
+  - id: degradation_g3_sales_to_product_due_date_generalized
+    category: degradation
+    scenario: golden1
+    description: >
+      G3: sales->product, acme:sso, due_date precision drops from day (Dec 15) to month
+      (December) -- §4.2 date-precision generalization, origin.
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: sales_to_product
+          entity_slug: acme
+          subject_key_suffix: ":sso"
+          slot: due_date
+          outcome: generalized
+          inherited: false
+
+  - id: degradation_g4_product_to_engineering_protocol_generalized_inherited
+    category: degradation
+    scenario: golden1
+    description: >
+      G4: product->engineering, acme:sso, protocol generalization from G1 resurfaces --
+      engineering's own upstream (product) never had a protocol slot either, so the
+      validator walks the `derived_from` chain up to the sales object and flags this as
+      `inherited` (§10.4), not a new loss at this handoff.
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: product_to_engineering
+          entity_slug: acme
+          subject_key_suffix: ":sso"
+          slot: protocol
+          outcome: generalized
+          inherited: true
+
+  - id: degradation_g5_product_to_engineering_idp_missing_inherited
+    category: degradation
+    scenario: golden1
+    description: >
+      G5: product->engineering, acme:sso, idp "Okta" is still missing -- inherited from the
+      G2 loss at sales->product, same chain-attribution walk as G4.
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: product_to_engineering
+          entity_slug: acme
+          subject_key_suffix: ":sso"
+          slot: idp
+          outcome: missing
+          inherited: true
+
+  - id: degradation_g6_product_to_engineering_due_date_missing_origin
+    category: degradation
+    scenario: golden1
+    description: >
+      G6: product->engineering, acme:sso, due_date is dropped entirely (not just
+      generalized) -- the engineering technical design has no date at all, a *new* loss at
+      this handoff (the product PRD still had "December"), so this is `origin`, unlike G4/G5.
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: product_to_engineering
+          entity_slug: acme
+          subject_key_suffix: ":sso"
+          slot: due_date
+          outcome: missing
+          inherited: false
+
+  # --- Golden 2: Globex onboarding with a sales error, §19.1 O3-O6 --------------------
+
+  - id: degradation_o3_sales_to_cs_region_contradicted
+    category: degradation
+    scenario: golden2
+    description: >
+      O3: sales->customer_success, globex:data_residency, region contradicted --
+      provisioning targets us-east-1 while the customer's own (highest-authority) statement
+      is EU; tagged `upstream_conflict` since the AE's lower-authority US note already
+      disagreed with the customer within the sales stage (O1).
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: sales_to_customer_success
+          entity_slug: globex
+          subject_key_contains: "data_residency"
+          slot: region
+          outcome: contradicted
+
+  - id: degradation_o4_sales_to_cs_quantity_contradicted
+    category: degradation
+    scenario: golden2
+    description: >
+      O4: sales->customer_success, globex:seats, quantity contradicted -- provisioning is
+      for 50 seats while the customer's own statement is 500; tagged `upstream_conflict`
+      for the same reason as O3 (O2's same-stage AE-vs-customer disagreement).
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: sales_to_customer_success
+          entity_slug: globex
+          subject_key_contains: "seats"
+          slot: quantity
+          outcome: contradicted
+
+  - id: degradation_o5_sales_to_cs_integration_object_missing
+    category: degradation
+    scenario: golden2
+    description: >
+      O5: sales->customer_success, globex:integration, object_missing -- the Salesforce
+      integration requirement the customer stated on the closing call has no counterpart at
+      all in the CS onboarding plan (slot is null: the whole downstream object is absent,
+      not one slot on it).
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: sales_to_customer_success
+          entity_slug: globex
+          subject_key_contains: "integration"
+          slot: null
+          outcome: object_missing
+
+  - id: degradation_o6_sales_to_cs_onboarding_due_date_generalized
+    category: degradation
+    scenario: golden2
+    description: >
+      O6: sales->customer_success, globex:onboarding, due_date generalized from day
+      (Jan 10) to quarter (Q1) -- §4.2 date-precision generalization, same mechanism as G3.
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: sales_to_customer_success
+          entity_slug: globex
+          subject_key_suffix: ":onboarding"
+          slot: due_date
+          outcome: generalized
+
+  # --- Golden 3: Cloud outage at peak hours (INC-2311), §19.1 I2-I6 -------------------
+
+  - id: degradation_i2_eng_to_sales_time_window_missing
+    category: degradation
+    scenario: golden3
+    description: >
+      I2: engineering->sales, acme:incident:INC-2311, time_window dropped -- the customer
+      email says only "brief blip", losing the postmortem's exact 18:05-18:52 peak-hours
+      window (47 min).
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: "engineering_to_customer_facing::sales"
+          entity_slug: acme
+          subject_key_contains: "incident"
+          slot: time_window
+          outcome: missing
+
+  - id: degradation_i3_eng_to_sales_sla_impact_missing
+    category: degradation
+    scenario: golden3
+    description: >
+      I3: engineering->sales, acme:incident:INC-2311, sla_impact dropped -- the SLA breach
+      and owed credit are never communicated to the customer; severity high per §10.2 (SLA
+      is a critical-importance slot on the `incident` contract field).
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: "engineering_to_customer_facing::sales"
+          entity_slug: acme
+          subject_key_contains: "incident"
+          slot: sla_impact
+          outcome: missing
+
+  - id: degradation_i4_eng_to_sales_impact_contradicted
+    category: degradation
+    scenario: golden3
+    description: >
+      I4: engineering->sales, acme:incident:INC-2311, impact.data_loss contradicted -- the
+      customer email claims "no data impact" while the postmortem records ~300 writes
+      queued and replayed.
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: "engineering_to_customer_facing::sales"
+          entity_slug: acme
+          subject_key_contains: "incident"
+          slot: impact
+          outcome: contradicted
+
+  - id: degradation_i5_eng_to_sales_root_cause_stale_reference
+    category: degradation
+    scenario: golden3
+    description: >
+      I5: engineering->sales, acme:incident:INC-2311, root_cause stale_reference -- the AE's
+      #acme-deal Slack message still cites the superseded v1 root cause ("our bad deploy")
+      after the on-call's v2 correction ("AWS ELB degraded") superseded it (§7.3 R3).
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: "engineering_to_customer_facing::sales"
+          entity_slug: acme
+          subject_key_contains: "incident"
+          slot: root_cause
+          outcome: stale_reference
+
+  - id: degradation_i6_eng_to_sales_remediation_object_missing
+    category: degradation
+    scenario: golden3
+    description: >
+      I6: engineering->sales, acme:incident:INC-2311, object_missing -- the postmortem's
+      remediation ("multi-AZ failover by Dec 15") has no downstream counterpart at all in
+      what was communicated to the customer (slot is null: the whole resolution object is
+      absent).
+    checks:
+      - kind: handoff_gap_outcome
+        params:
+          contract_id: "engineering_to_customer_facing::sales"
+          entity_slug: acme
+          subject_key_contains: "incident"
+          slot: null
+          outcome: object_missing
