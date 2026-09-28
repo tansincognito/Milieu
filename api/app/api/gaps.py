@@ -1,8 +1,6 @@
 """GET /gaps, POST /gaps/{id}/review — dashboard additions matching the endpoints already
-named (but not yet built) in §15's API table. `context_gaps` rows are only ever written by
-the Day 3 handoff validator (§10), which is out of scope here, so these endpoints will
-return an empty queue until that validator ships — the ORM table and its `open` status
-already exist (§16), so this is a read/write surface on top of it, not new pipeline logic.
+named in §15's API table. `context_gaps` rows are produced by the Day 3 handoff validator
+(`app/pipeline/handoff.py`, wired through `POST /handoffs/validate` in `app/api/handoffs.py`).
 Used by the dashboard's Gaps tab (§17.2) and review queue (§17.5)."""
 
 from __future__ import annotations
@@ -19,6 +17,34 @@ from app.models.orm import ContextGaps, ContextObjects, Entities, Reviews, Sourc
 from app.schemas.context import GapOut, GapReviewRequest
 
 router = APIRouter()
+
+
+def gap_to_out(db: Session, gap: ContextGaps, principal: list[str] | None) -> GapOut:
+    """Shared serializer — also used by `app/api/handoffs.py`'s report endpoint so a gap
+    looks identical whether read from `/gaps` or `/handoffs/{id}`."""
+    upstream = db.get(ContextObjects, gap.upstream_id) if gap.upstream_id else None
+    downstream = db.get(ContextObjects, gap.downstream_id) if gap.downstream_id else None
+    return GapOut(
+        id=gap.id,
+        validation_id=gap.validation_id,
+        contract_field=gap.contract_field,
+        upstream_id=gap.upstream_id,
+        downstream_id=gap.downstream_id,
+        slot=gap.slot,
+        outcome=gap.outcome,
+        severity=float(gap.severity),
+        severity_band=gap.severity_band,
+        inherited=gap.inherited,
+        upstream_conflict=gap.upstream_conflict,
+        explanation=gap.explanation,
+        status=gap.status,
+        upstream=context_object_to_out(upstream, db.get(Sources, upstream.source_id), principal)
+        if upstream
+        else None,
+        downstream=context_object_to_out(downstream, db.get(Sources, downstream.source_id), principal)
+        if downstream
+        else None,
+    )
 
 
 @router.get("/gaps", response_model=list[GapOut])
@@ -51,37 +77,7 @@ def list_gaps(
             | ContextGaps.downstream_id.in_(entity_object_ids)
         )
     gaps = query.order_by(ContextGaps.severity.desc()).all()
-
-    out: list[GapOut] = []
-    for gap in gaps:
-        upstream = db.get(ContextObjects, gap.upstream_id) if gap.upstream_id else None
-        downstream = db.get(ContextObjects, gap.downstream_id) if gap.downstream_id else None
-        out.append(
-            GapOut(
-                id=gap.id,
-                validation_id=gap.validation_id,
-                contract_field=gap.contract_field,
-                upstream_id=gap.upstream_id,
-                downstream_id=gap.downstream_id,
-                slot=gap.slot,
-                outcome=gap.outcome,
-                severity=float(gap.severity),
-                severity_band=gap.severity_band,
-                inherited=gap.inherited,
-                upstream_conflict=gap.upstream_conflict,
-                explanation=gap.explanation,
-                status=gap.status,
-                upstream=context_object_to_out(upstream, db.get(Sources, upstream.source_id), principal)
-                if upstream
-                else None,
-                downstream=context_object_to_out(
-                    downstream, db.get(Sources, downstream.source_id), principal
-                )
-                if downstream
-                else None,
-            )
-        )
-    return out
+    return [gap_to_out(db, gap, principal) for gap in gaps]
 
 
 @router.post("/gaps/{gap_id}/review")
