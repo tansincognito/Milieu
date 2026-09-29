@@ -179,21 +179,59 @@ export interface SourceOut {
   provenance: Record<string, unknown> | null;
 }
 
+export type GapOutcome =
+  | "preserved"
+  | "equivalent"
+  | "generalized"
+  | "missing"
+  | "contradicted"
+  | "object_missing"
+  | "stale_reference";
+
 export interface GapOut {
   id: string;
   validation_id: string;
   contract_field: string;
-  upstream_id: string;
+  // Nullable since migration 0004: a present-check violation (e.g. a missing
+  // `acceptance_criteria`) has no upstream counterpart to point at.
+  upstream_id: string | null;
   downstream_id: string | null;
   slot: string | null;
-  outcome: string;
+  outcome: GapOutcome;
   severity: number;
   severity_band: string;
   inherited: boolean;
+  upstream_conflict: boolean;
   explanation: string;
   status: string;
   upstream: ContextObjectOut | null;
   downstream: ContextObjectOut | null;
+}
+
+export interface ContractOut {
+  id: string;
+  from_stage: string;
+  to_stage: string;
+  field_count: number;
+}
+
+export interface HandoffValidationOut {
+  id: string;
+  entity_id: string;
+  contract_id: string;
+  as_of: string;
+  created_at: string;
+  summary: {
+    total: number;
+    by_outcome: Record<string, number>;
+    by_severity_band: Record<string, number>;
+    inherited: number;
+    origin: number;
+  };
+}
+
+export interface HandoffReportOut extends HandoffValidationOut {
+  gaps: GapOut[];
 }
 
 export type ReviewAction = "confirm" | "edit" | "ignore" | "mark_stale";

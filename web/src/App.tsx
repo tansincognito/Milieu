@@ -4,6 +4,7 @@ import { api, ApiError } from "./api";
 import { ContextExplorer } from "./pages/ContextExplorer";
 import { ContextStandalone } from "./pages/ContextStandalone";
 import { EntityPicker } from "./pages/EntityPicker";
+import { HandoffReport } from "./pages/HandoffReport";
 import { ReviewQueue } from "./pages/ReviewQueue";
 import type { JobStats } from "./types";
 
@@ -88,6 +89,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<EntityPicker />} />
           <Route path="/entities/:entityId" element={<ContextExplorer />} />
+          <Route path="/entities/:entityId/handoffs" element={<HandoffReport />} />
           <Route path="/context/:contextId" element={<ContextStandalone />} />
           <Route path="/review" element={<ReviewQueue />} />
         </Routes>

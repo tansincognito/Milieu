@@ -99,9 +99,14 @@ export function ContextExplorer() {
               : "Loading…"}
           </div>
         </div>
-        <button className="btn" onClick={() => navigate("/")}>
-          ← All entities
-        </button>
+        <div className="page-header-actions">
+          <button className="btn" onClick={() => navigate(`/entities/${entityId}/handoffs`)}>
+            Handoff report →
+          </button>
+          <button className="btn" onClick={() => navigate("/")}>
+            ← All entities
+          </button>
+        </div>
       </div>
 
       {error && <div className="banner error">{error}</div>}

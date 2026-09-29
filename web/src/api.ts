@@ -7,10 +7,13 @@ import type {
   ContextHistoryOut,
   ContextLineageOut,
   ContextObjectOut,
+  ContractOut,
   EntityContextOut,
   EntityOut,
   GapOut,
   GapReviewRequest,
+  HandoffReportOut,
+  HandoffValidationOut,
   JobStats,
   ReviewRequest,
   SourceOut,
@@ -93,6 +96,17 @@ export const api = {
     request<{ gap_id: string; status: string }>(`/gaps/${id}/review`, {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+
+  listContracts: () => request<ContractOut[]>("/contracts"),
+
+  listEntityHandoffs: (entityId: string) =>
+    request<HandoffReportOut[]>(`/entities/${entityId}/handoffs`),
+
+  validateAllHandoffs: (entityId: string) =>
+    request<HandoffValidationOut[]>("/handoffs/validate-all", {
+      method: "POST",
+      body: JSON.stringify({ entity_id: entityId }),
     }),
 
   loadMockData: () =>

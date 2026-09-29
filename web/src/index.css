@@ -252,3 +252,173 @@ a { color: var(--accent); }
 .status-tag.conflicting { color: var(--danger); border-color: #f5c6c0; background: #fdecea; }
 .status-tag.active { color: var(--ok); border-color: #bfe6cf; background: #e9f7ef; }
 .status-tag.superseded, .status-tag.stale { color: var(--muted); }
+
+/* ── §17.4 handoff report ─────────────────────────────────────────────────── */
+
+.handoff-page .page-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.page-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.handoff-page .legend {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 16px;
+  line-height: 1.7;
+}
+
+.handoff-page .legend span {
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+.hcontract {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.hcontract-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.hcontract-head h3 {
+  margin: 0;
+  font-size: 14px;
+  text-transform: capitalize;
+}
+
+.hsummary {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hsummary .ok {
+  color: var(--ok, #2e7d32);
+}
+
+.hgrid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.hgrid th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hgrid td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.hsubject {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.hslot {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.hexplain {
+  color: var(--muted);
+  max-width: 46ch;
+}
+
+.hcell-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  color: inherit;
+}
+
+.hcell-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.hmark {
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.hsev {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.hcell-generalized .hmark,
+.legend .hcell-generalized {
+  color: #b26a00;
+}
+
+.hcell-missing .hmark,
+.legend .hcell-missing {
+  color: #c62828;
+}
+
+.hcell-contradicted .hmark,
+.legend .hcell-contradicted {
+  color: #ad1457;
+}
+
+.hcell-object_missing .hmark,
+.legend .hcell-object_missing {
+  color: #6a1b9a;
+}
+
+.hcell-stale_reference .hmark,
+.legend .hcell-stale_reference {
+  color: #00695c;
+}
+
+.hbadge-inherited,
+.hbadge-conflict {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.hbadge-conflict {
+  border-color: #ad1457;
+  color: #ad1457;
+}
