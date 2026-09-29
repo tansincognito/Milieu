@@ -1,0 +1,28 @@
+id: sales_to_product
+from_stage: sales
+to_stage: product
+fields:
+  - name: requirements
+    check: propagate
+    types: [requirement]
+    min_upstream_authority: 2
+    slots: [protocol, idp, due_date, priority, extra]
+    importance: critical
+  - name: commitments
+    check: propagate
+    types: [commitment]
+    slots: [due_date]
+    importance: high
+  - name: constraints
+    check: propagate
+    types: [constraint]
+    importance: high
+  - name: problem
+    check: propagate
+    types: [problem]
+    importance: normal
+  - name: evidence
+    check: present
+    types: [requirement]
+    rule: has_derived_from
+    importance: high

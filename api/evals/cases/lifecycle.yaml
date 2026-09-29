@@ -1,0 +1,74 @@
+# Lifecycle / supersession eval set (§19.2: 3 cases, "correct current state", §7.3).
+# `lifecycle_scim_slack_supersession_chain` is the Day-2 exit criterion's named scenario
+# (§21: "the SCIM supersession ... scenario produce[s] the expected current state").
+cases:
+  - id: lifecycle_scim_slack_supersession_chain
+    category: lifecycle
+    description: >
+      #product Slack: Sam Rivera posts SCIM required -> deferred -> "back in scope"
+      (required) across three messages. R3 (same author, later timestamp, authority>=)
+      should supersede each prior message; current state is the last message, active,
+      stance required.
+    checks:
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: slack, channel: C_PRODUCT, text_contains: "We're building it alongside SSO"}, subject_key_suffix: ":scim"}
+          field: status
+          value: superseded
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: slack, channel: C_PRODUCT, text_contains: "Pushing it to Q1"}, subject_key_suffix: ":scim"}
+          field: status
+          value: superseded
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: slack, channel: C_PRODUCT, text_contains: "InfoSec flagged manual provisioning"}, subject_key_suffix: ":scim"}
+          field: status
+          value: active
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: slack, channel: C_PRODUCT, text_contains: "InfoSec flagged manual provisioning"}, subject_key_suffix: ":scim"}
+          field: attributes.stance
+          value: required
+
+  - id: lifecycle_incident_root_cause_supersession
+    category: lifecycle
+    description: >
+      #incidents Slack: on-call Alex first suspects the 18:00 deploy, then (same person,
+      explicit correction language) identifies the real AWS ELB root cause. R3 supersedes
+      the first hypothesis; current state is the AWS ELB root cause.
+    checks:
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: slack, channel: C_INCIDENTS, text_contains: "suspect our 18:00 deploy"}}
+          field: status
+          value: superseded
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: slack, channel: C_INCIDENTS, text_contains: "ELB is showing degraded"}}
+          field: status
+          value: active
+      - kind: relation_exists
+        params:
+          relation: supersedes
+          from: {source: {kind: slack, channel: C_INCIDENTS, text_contains: "ELB is showing degraded"}}
+          to: {source: {kind: slack, channel: C_INCIDENTS, text_contains: "suspect our 18:00 deploy"}}
+
+  - id: lifecycle_globex_salesforce_requirement_stable_current_state
+    category: lifecycle
+    description: >
+      The customer's Salesforce-integration requirement (Globex call) has no competing
+      requirement-type statement anywhere in the mock data (the sales rebuttal and the
+      pricing decision are `commitment`/`decision` types, so they never collide with this
+      `requirement`) -- it should stay `active` at version 1, untouched.
+    checks:
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: call, call_id: globex-closing-2026-11-04}, type: requirement, evidence_quote_contains: "Salesforce integration"}
+          field: status
+          value: active
+      - kind: object_field_equals
+        params:
+          object: {source: {kind: call, call_id: globex-closing-2026-11-04}, type: requirement, evidence_quote_contains: "Salesforce integration"}
+          field: version
+          value: 1

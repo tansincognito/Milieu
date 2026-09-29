@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.connectors.mock_call import MockCallConnector
+from app.connectors.mock_drive import MockDriveConnector
 from app.core.config import get_settings
 from app.core.db import engine
 from app.models.orm import ContextObjects, ContextVersions, Entities, EntityAliases, Sources
@@ -63,7 +64,12 @@ def db_session() -> Session:
     tenant_id = uuid.uuid4()
     yield session, tenant_id  # type: ignore[misc]
     session.rollback()
-    # Clean up everything this test created, scoped by tenant_id.
+    # Clean up everything this test created, scoped by tenant_id. context_relations must go
+    # first -- it FKs to context_objects, and a test whose items share a subject_key can
+    # trigger a lifecycle relation (§7.3) between them.
+    session.execute(text("DELETE FROM context_relations WHERE from_id IN "
+                          "(SELECT id FROM context_objects WHERE tenant_id = :t)"),
+                     {"t": tenant_id})
     session.execute(text("DELETE FROM context_versions WHERE context_id IN "
                           "(SELECT id FROM context_objects WHERE tenant_id = :t)"),
                      {"t": tenant_id})
@@ -145,11 +151,12 @@ def test_acme_call_extraction_end_to_end(db_session: tuple[Session, uuid.UUID]) 
     fake_redis.get.return_value = None  # force a cache miss so the canned LLM is called
     settings = get_settings()
 
-    created = process_extraction_job(
+    result = process_extraction_job(
         db, fake_redis, llm, embedder, settings, tenant_id, source.id
     )
 
-    assert created == 3
+    assert result.created == 3
+    assert result.rejected == 0
     assert llm.calls == 1
     fake_redis.set.assert_called_once()
 
@@ -203,3 +210,96 @@ def test_entity_resolution_reuses_seeded_acme_alias(db_session: tuple[Session, u
     assert resolved_id == entity.id
     # No duplicate entity was created for a known alias.
     assert db.query(Entities).filter(Entities.tenant_id == tenant_id).count() == 1
+
+
+def test_drive_section_with_markdown_and_em_dash_quotes_is_not_rejected(
+    db_session: tuple[Session, uuid.UUID],
+) -> None:
+    """Regression test for the 2026-09-28 eval run: `sales/acme-requirements.md`'s
+    "Requirements" section produced 0 context objects. An LLM reading the rendered markdown
+    naturally drops the `**bold**` markers and reads the em-dash as a hyphen when it quotes
+    the text, so `evidence_quote` was no longer a literal substring of `source.text` and
+    every item in the section was silently rejected by the old bare-`str.find` evidence-span
+    check. This uses the real mock document text and canned quotes shaped exactly like that
+    failure pattern to prove the fix end to end (extraction accepted, §4.3 invariant holds
+    on the persisted, original-text span)."""
+    db, tenant_id = db_session
+    connector = MockDriveConnector(MOCK_DATA_DIR / "drive")
+    raw = next(
+        r
+        for r in connector.fetch(None)
+        if r.payload["path"] == "sales/acme-requirements.md"
+        and r.payload["heading"] == "Requirements"
+    )
+    normalized = connector.normalize(raw)
+    assert "**December 15, 2026**" in normalized.text
+    assert "—" in normalized.text  # em-dash, read by the model as a hyphen
+
+    source = Sources(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        kind=normalized.kind,
+        external_id=normalized.external_id,
+        version=1,
+        content_hash=normalized.content_hash,
+        stage=normalized.stage,
+        acl=normalized.acl,
+        provenance=normalized.provenance.model_dump(mode="json"),
+        text=normalized.text,
+        source_ts=normalized.source_ts,
+    )
+    db.add(source)
+    db.commit()
+
+    canned = ExtractionResult(
+        items=[
+            ExtractedContext(
+                type="requirement",
+                subject_capability="sso",
+                entity_hint="Acme",
+                content="Acme requires SAML SSO through Okta by December 15, 2026.",
+                attributes=ContextAttributes(
+                    protocol="SAML", idp="Okta", due_date="2026-12-15", due_date_precision="day"
+                ),
+                actor_label="SALES",
+                # No asterisks -- the model "saw through" the bold markdown.
+                evidence_quote="Target date: December 15, 2026",
+                confidence=0.9,
+            ),
+            ExtractedContext(
+                type="requirement",
+                subject_capability="sso",
+                entity_hint="Acme",
+                content="SAML/Okta is a hard requirement for Acme, not a nice-to-have.",
+                attributes=ContextAttributes(),
+                actor_label="SALES",
+                # Hyphen, not the source's real em-dash.
+                evidence_quote=(
+                    "a hard requirement, not a preference - their InfoSec team already runs Okta"
+                ),
+                confidence=0.85,
+            ),
+        ]
+    )
+    llm = CannedLLMClient(canned)
+    embedder = FakeEmbeddingClient()
+    fake_redis = MagicMock()
+    fake_redis.get.return_value = None
+    settings = get_settings()
+
+    result = process_extraction_job(db, fake_redis, llm, embedder, settings, tenant_id, source.id)
+
+    # Before the fix: both items failed the bare-substring evidence-span check and were
+    # silently discarded -- created == 0 with no way to tell that apart from "the LLM
+    # returned nothing". After the fix: both are accepted, and rejected is observable.
+    assert result.created == 2
+    assert result.rejected == 0
+
+    objects = db.query(ContextObjects).filter(ContextObjects.source_id == source.id).all()
+    assert len(objects) == 2
+    for obj in objects:
+        # §4.3 invariant holds byte-for-byte on the persisted, original-text span, even
+        # though the LLM's own evidence_quote (normalized markdown/em-dash) never appeared
+        # literally in source.text.
+        span_text = normalized.text[obj.evidence_span.lower : obj.evidence_span.upper]
+        assert span_text == obj.evidence_quote

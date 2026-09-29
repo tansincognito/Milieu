@@ -1,0 +1,27 @@
+id: product_to_engineering
+from_stage: product
+to_stage: engineering
+fields:
+  - name: requirements
+    check: propagate
+    types: [requirement]
+    slots: [protocol, idp, due_date, priority, extra]
+    importance: critical
+  - name: decisions
+    check: propagate
+    types: [decision]
+    slots: [rationale]
+    importance: high
+  - name: dependencies
+    check: propagate
+    types: [dependency]
+    importance: high
+  - name: constraints
+    check: propagate
+    types: [constraint]
+    importance: high
+  - name: acceptance_criteria
+    check: present
+    types: [requirement]
+    slots: [acceptance_criteria]
+    importance: high

@@ -29,7 +29,7 @@ class OpenRouterLLMClient:
         app_name: str = "Milieu",
         site_url: str = "",
         base_url: str = OPENROUTER_BASE_URL,
-        timeout: float = 60.0,
+        timeout: float = 180.0,
     ) -> None:
         self._model = model
         headers = {
@@ -105,7 +105,13 @@ class OpenRouterLLMClient:
             resp = self._post(fallback_body)
         resp.raise_for_status()
         data = resp.json()
-        return str(data["choices"][0]["message"]["content"])
+        try:
+            return str(data["choices"][0]["message"]["content"])
+        except (KeyError, IndexError) as exc:
+            # A 200 with no choices means the provider reported the failure in the body.
+            raise RuntimeError(
+                f"OpenRouter returned no completion: {data.get('error') or data}"
+            ) from exc
 
     def _post(self, body: dict) -> httpx.Response:
         resp = self._client.post("/chat/completions", json=body)

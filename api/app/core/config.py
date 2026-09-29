@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -29,6 +30,15 @@ class Settings(BaseSettings):
     schema_version: str = "1"
 
     mock_data_dir: str = str(_REPO_ROOT / "mock-data")
+
+    # CORS allowlist for the dashboard dev server (`web/`, §17, §20). Comma-separated env var.
+    dashboard_origins_raw: str = Field(
+        default="http://localhost:5173,http://127.0.0.1:5173", alias="DASHBOARD_ORIGINS"
+    )
+
+    @property
+    def dashboard_origins(self) -> list[str]:
+        return [o.strip() for o in self.dashboard_origins_raw.split(",") if o.strip()]
 
 
 @lru_cache

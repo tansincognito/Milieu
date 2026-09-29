@@ -38,7 +38,7 @@ def run_once(
         tenant_id = uuid.UUID(job.payload["tenant_id"])
         source_id = uuid.UUID(job.payload["source_id"])
         try:
-            created = process_extraction_job(
+            result = process_extraction_job(
                 db, redis_client, llm, embedder, settings, tenant_id, source_id
             )
         except LLMRateLimitedError as exc:
@@ -51,7 +51,12 @@ def run_once(
             logger.exception("job %s failed (attempt %d)", job.id, job.attempts)
         else:
             queue.ack(job.id)
-            logger.info("job %s done: %d context objects created", job.id, created)
+            logger.info(
+                "job %s done: %d context objects created, %d rejected (evidence-span)",
+                job.id,
+                result.created,
+                result.rejected,
+            )
     finally:
         db.close()
     return True

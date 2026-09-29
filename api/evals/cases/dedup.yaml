@@ -1,0 +1,42 @@
+# Dedup eval set (§19.2: 3 cases, "grouping accuracy", §7.2). Two positive cases (near-
+# identical restatements of the same fact from different sources should be linked
+# `duplicate_of`) and one negative case (statements that share entity/type/subject_key but
+# clearly should *not* be grouped -- a hedged sales suggestion vs. a firm customer ask --
+# must not be silently merged).
+cases:
+  - id: dedup_acme_sso_call_and_email_are_duplicates
+    category: dedup
+    description: >
+      The customer's SSO ask, stated once on the discovery call and again (near-verbatim)
+      in the follow-up security-thread email, are linked as duplicates.
+    checks:
+      - kind: relation_exists
+        params:
+          relation: duplicate_of
+          from: {source: {kind: call, call_id: acme-discovery-2026-10-02}, type: requirement, subject_key_suffix: ":sso"}
+          to: {source: {kind: email, message_id: acme-security-thread-001-msg1}, subject_key_suffix: ":sso"}
+
+  - id: dedup_acme_sso_sales_docs_are_duplicates
+    category: dedup
+    description: >
+      The two sales-stage Acme docs (requirements doc and customer-notes doc) both restate
+      the same SAML/Okta SSO requirement and are linked as duplicates.
+    checks:
+      - kind: relation_exists
+        params:
+          relation: duplicate_of
+          from: {source: {kind: drive, path: sales/acme-requirements.md, heading_contains: Requirements}, subject_key_suffix: ":sso"}
+          to: {source: {kind: drive, path: sales/acme-customer-notes.md, heading_contains: Priority}, subject_key_suffix: ":sso"}
+
+  - id: dedup_scim_speculation_not_grouped_with_customer_requirement
+    category: dedup
+    description: >
+      Sales's hedged SCIM suggestion on the call ("you'd probably want SCIM too") must NOT
+      be grouped as a duplicate of the customer's firm, later SCIM requirement in the
+      security-thread email -- very different authority and confidence, must stay distinct.
+    checks:
+      - kind: relation_absent
+        params:
+          relation: duplicate_of
+          from: {source: {kind: call, call_id: acme-discovery-2026-10-02}, subject_key_suffix: ":scim"}
+          to: {source: {kind: email, message_id: acme-security-thread-001-msg1}, subject_key_suffix: ":scim"}

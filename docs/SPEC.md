@@ -27,6 +27,7 @@ Supersedes: PRD + Technical Specification v0.1 (500-line numbered version)
 | C18 | Four gaps closed from the Day 1a build: `customer_success` added to `actor_role`; optional `author` on drive provenance with a stage fallback; a `speculative` flag that separates authority 2 from 1; and `evidence_locator` for per-quote position, which keeps call transcripts whole as sources. | The build hit each of these and had to interpret. Interpretations belong in the spec, not in code comments. |
 | C17 | The LLM provider for the MVP is OpenRouter's free tier, behind the same `LLMClient` interface. | Zero cost for the MVP. The interface keeps a paid or other vendor a config swap. |
 | C15 | Email stage and every source's `actor_role` are resolved through a people directory (person → team → role). | Internal email must map to the sender's team. The same lookup gives Slack authors a correct role. |
+| C19 | `context_objects.actor_person_id` (nullable FK to `people`) was added, with its own Alembic migration (0002). | Rule R3 in §7.3 ("same author supersedes") needs a person identity on the object, and `actor_label` is free text that cannot be compared reliably. Resolves through the directory (Slack user_id, email). |
 
 Unchanged: the product thesis, the non-goals, the Sales → Product → Engineering flow, Acme as the test entity, and the React / FastAPI / Postgres + pgvector / Redis / Docker Compose stack.
 
@@ -182,6 +183,9 @@ subject_key        text
 content            normalized one-sentence statement (LLM-written; never replaces evidence)
 attributes         jsonb slots §4.2
 actor_label        text  ("Dana Kim (Acme)", "SALES", ...)
+actor_person_id    fk people null — the person identity resolved through the directory (Slack user_id,
+                   email). Nullable because drive sources carry no author identity and call transcripts
+                   label roles, not individuals. Required for R3 same-author check in §7.3.
 actor_role         enum customer | sales | product | engineering | customer_success | other | system
 stage              enum sales | product | engineering | null
 authority          smallint 0–4 (§5)

@@ -1,0 +1,20 @@
+# §9: this contract runs for to_stage = sales and to_stage = customer_success — the incident
+# handoff is checked against whichever customer-facing function communicated the incident.
+# `context_contracts.to_stage` (§16) is a single column, so the loader (app/pipeline/contracts.py)
+# expands `to_stage: [sales, customer_success]` into two rows, one per stage, both id-suffixed
+# (e.g. `engineering_to_customer_facing::sales`) so each is independently addressable by
+# POST /handoffs/validate.
+id: engineering_to_customer_facing
+from_stage: engineering
+to_stage: [sales, customer_success]
+fields:
+  - name: incident
+    check: propagate
+    types: [problem]
+    slots: [impact, time_window, root_cause, sla_impact]
+    importance: critical
+  - name: resolution
+    check: propagate
+    types: [resolution]
+    slots: [remediation, due_date]
+    importance: high

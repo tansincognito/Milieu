@@ -1,0 +1,40 @@
+# Lineage eval set (§19.2: 3 cases, "correct `derived_from` edges", §8). Includes the
+# product "Support SSO" deriving from the customer call requirement, called out explicitly
+# in the dispatch.
+cases:
+  - id: lineage_product_support_sso_derives_from_customer_call
+    category: lineage
+    description: >
+      Product's "Support SSO for Acme" (PRD) is `derived_from` the customer's original SSO
+      requirement on the discovery call (sales -> product), not some unrelated requirement.
+    checks:
+      - kind: relation_exists
+        params:
+          relation: derived_from
+          from: {source: {kind: drive, path: product/acme-prd.md, heading_contains: Requirements}, subject_key_suffix: ":sso"}
+          to: {source: {kind: call, call_id: acme-discovery-2026-10-02}, type: requirement, subject_key_suffix: ":sso"}
+
+  - id: lineage_engineering_implement_sso_derives_from_product_prd
+    category: lineage
+    description: >
+      Engineering's "Implement SSO" technical design is `derived_from` product's "Support
+      SSO" PRD requirement (product -> engineering).
+    checks:
+      - kind: relation_exists
+        params:
+          relation: derived_from
+          from: {source: {kind: drive, path: engineering/acme-technical-design.md, heading_contains: Scope}, subject_key_suffix: ":sso"}
+          to: {source: {kind: drive, path: product/acme-prd.md, heading_contains: Requirements}, subject_key_suffix: ":sso"}
+
+  - id: lineage_no_stage_skipping_edge_from_engineering_to_call
+    category: lineage
+    description: >
+      Lineage edges only ever connect adjacent stage pairs (sales->product, product->
+      engineering); engineering's "Implement SSO" must NOT have a direct `derived_from`
+      edge straight back to the sales-stage customer call, skipping the product stage.
+    checks:
+      - kind: relation_absent
+        params:
+          relation: derived_from
+          from: {source: {kind: drive, path: engineering/acme-technical-design.md, heading_contains: Scope}, subject_key_suffix: ":sso"}
+          to: {source: {kind: call, call_id: acme-discovery-2026-10-02}, type: requirement, subject_key_suffix: ":sso"}

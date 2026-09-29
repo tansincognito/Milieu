@@ -1,0 +1,89 @@
+# Entity eval set (§19.2: 5 cases, "alias resolution accuracy"). Each case checks that two
+# context objects extracted from *different* mock-data sources -- which refer to the same
+# company under different spellings/phrasing ("Acme", "Acme Corp", "ACME Inc.", or just
+# implied by context) -- resolve to the *same* `entities.id` row (§7.1).
+cases:
+  - id: entity_acme_call_vs_sales_doc
+    category: entity
+    description: >
+      Acme customer call (SSO ask) and the sales requirements doc resolve to one Acme
+      entity.
+    checks:
+      - kind: entities_equal
+        params:
+          objects:
+            - source: {kind: call, call_id: acme-discovery-2026-10-02}
+              type: requirement
+              subject_key_suffix: ":sso"
+            - source: {kind: drive, path: sales/acme-requirements.md, heading_contains: Requirements}
+              subject_key_suffix: ":sso"
+
+  - id: entity_acme_email_vs_product_prd
+    category: entity
+    description: >
+      Acme customer security-thread email and the product PRD ("Support SSO") resolve to
+      one Acme entity, across the sales -> product handoff.
+    checks:
+      - kind: entities_equal
+        params:
+          objects:
+            - source: {kind: email, message_id: acme-security-thread-001-msg1}
+              subject_key_suffix: ":sso"
+            - source: {kind: drive, path: product/acme-prd.md, heading_contains: Requirements}
+              subject_key_suffix: ":sso"
+
+  - id: entity_acme_call_vs_engineering_design
+    category: entity
+    description: >
+      Acme customer call and the engineering technical design doc ("Implement SSO for the
+      Acme account") resolve to one Acme entity, across three stages.
+    checks:
+      - kind: entities_equal
+        params:
+          objects:
+            - source: {kind: call, call_id: acme-discovery-2026-10-02}
+              type: requirement
+              subject_key_suffix: ":sso"
+            - source: {kind: drive, path: engineering/acme-technical-design.md, heading_contains: Scope}
+              subject_key_suffix: ":sso"
+
+  - id: entity_acme_incident_postmortem_not_split
+    category: entity
+    description: >
+      The INC-2311 postmortem's Impact section names both "Acme Corp" and "Globex
+      Corporation" in the same paragraph; the incident object still resolves to the same
+      Acme entity as the Acme call, not a stray duplicate "Acme"-like entity.
+    checks:
+      - kind: entities_equal
+        params:
+          objects:
+            - source: {kind: call, call_id: acme-discovery-2026-10-02}
+              type: requirement
+              subject_key_suffix: ":sso"
+            - source: {kind: drive, path: engineering/postmortem-INC-2311.md, heading_contains: Impact}
+              subject_key_contains: "incident"
+
+  - id: entity_globex_call_vs_onboarding_doc_and_distinct_from_acme
+    category: entity
+    description: >
+      Globex customer call and the CS onboarding plan doc resolve to one Globex entity,
+      which is distinct from the Acme entity (no over-merging of two different customers).
+    checks:
+      - kind: entities_equal
+        params:
+          objects:
+            - source: {kind: call, call_id: globex-closing-2026-11-04}
+              type: requirement
+              subject_key_suffix: ":onboarding"
+            - source: {kind: drive, path: customer_success/globex-onboarding-plan.md, heading_contains: Timeline}
+              subject_key_suffix: ":onboarding"
+      - kind: entities_distinct
+        params:
+          a:
+            source: {kind: call, call_id: globex-closing-2026-11-04}
+            type: requirement
+            subject_key_suffix: ":onboarding"
+          b:
+            source: {kind: call, call_id: acme-discovery-2026-10-02}
+            type: requirement
+            subject_key_suffix: ":sso"

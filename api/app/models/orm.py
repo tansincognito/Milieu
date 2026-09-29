@@ -42,11 +42,28 @@ CONTEXT_TYPES = (
     "resolution",
     "dependency",
 )
-ACTOR_ROLES = ("customer", "sales", "product", "engineering", "other", "system")
+ACTOR_ROLES = (
+    "customer",
+    "sales",
+    "product",
+    "engineering",
+    "customer_success",
+    "other",
+    "system",
+)
 CONTEXT_STATUSES = ("candidate", "active", "conflicting", "superseded", "stale", "ignored")
 SOURCE_KINDS = ("slack", "email", "drive", "call", "api")
 JOB_STATUSES = ("queued", "running", "done", "failed", "poison")
 GAP_STATUSES = ("open", "ignored", "resolved")
+GAP_OUTCOMES = (
+    "preserved",
+    "equivalent",
+    "generalized",
+    "missing",
+    "contradicted",
+    "object_missing",
+    "stale_reference",
+)
 REVIEW_ACTIONS = ("confirm", "edit", "ignore", "resolve_conflict", "mark_stale")
 RELATION_KINDS = (
     "derived_from",
@@ -130,10 +147,12 @@ class EntityAliases(Base):
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     alias_normalized: Mapped[str] = mapped_column(String, nullable=False)
+    # §7.1 step 4: 'candidate' rows are 0.6-0.85 trgm near-misses awaiting review; only
+    # 'confirmed' rows are unique per (tenant, alias_normalized) — see migration 0002.
+    status: Mapped[str] = mapped_column(String, nullable=False, default="confirmed")
+    similarity: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
 
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "alias_normalized", name="uq_alias_tenant_normalized"),
-    )
+    __table_args__ = (CheckConstraint("status IN ('confirmed', 'candidate')", name="ck_entity_aliases_status"),)
 
 
 class Sources(Base, TenantMixin):
@@ -192,6 +211,11 @@ class ContextObjects(Base, TenantMixin):
     evidence_span: Mapped[Range] = mapped_column(INT4RANGE, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
     extraction_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    # §7.3 R3 "same author": resolved through the people directory. Nullable — drive
+    # sources carry no author identity (§6.2 gap) and call transcripts label roles only.
+    actor_person_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("people.id"), nullable=True
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -301,8 +325,11 @@ class ContextGaps(Base):
         UUID(as_uuid=True), ForeignKey("handoff_validations.id"), nullable=False
     )
     contract_field: Mapped[str] = mapped_column(String, nullable=False)
-    upstream_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("context_objects.id"), nullable=False
+    # Nullable: `present`-check gaps (§9's has_derived_from/has_customer_contact/
+    # acceptance-criteria rules) have no upstream counterpart to compare against — see
+    # migration 0004.
+    upstream_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("context_objects.id"), nullable=True
     )
     downstream_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("context_objects.id"), nullable=True
@@ -312,10 +339,16 @@ class ContextGaps(Base):
     severity: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False)
     severity_band: Mapped[str] = mapped_column(String, nullable=False)
     inherited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # §10.1 step 1: "the gap is tagged upstream_conflict so the report shows that the
+    # error started inside the upstream stage" — see migration 0004.
+    upstream_conflict: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="open")
 
-    __table_args__ = (CheckConstraint(f"status IN {GAP_STATUSES}", name="ck_context_gaps_status"),)
+    __table_args__ = (
+        CheckConstraint(f"status IN {GAP_STATUSES}", name="ck_context_gaps_status"),
+        CheckConstraint(f"outcome IN {GAP_OUTCOMES}", name="ck_context_gaps_outcome"),
+    )
 
 
 class Reviews(Base):

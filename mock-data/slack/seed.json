@@ -6,7 +6,7 @@
       "name": "acme-deal",
       "messages": [
         {
-          "ts": "1732739700.000100",
+          "ts": "1795811700.000100",
           "user": "U_AE_JORDAN",
           "text": "Quick update on tonight's checkout blip for Acme — looks like it was our bad deploy, I've already apologised to Dana and told her we rolled it back."
         }
@@ -17,22 +17,22 @@
       "name": "product",
       "messages": [
         {
-          "ts": "1728394800.000100",
+          "ts": "1791466800.000100",
           "user": "U_PM_SAM",
           "text": "SCIM for Acme: required. We're building it alongside SSO per their security review."
         },
         {
-          "ts": "1728655200.000200",
+          "ts": "1791727200.000200",
           "user": "U_PM_SAM",
           "text": "Update: SCIM for Acme is deferred. Pushing it to Q1 so we don't split focus before the December SSO date — SSO is the harder deadline."
         },
         {
-          "ts": "1729440000.000300",
+          "ts": "1792512000.000300",
           "user": "U_PM_SAM",
           "text": "Actually, SCIM for Acme is back in scope for December — InfoSec flagged manual provisioning as a compliance gap in their latest review, so we need it alongside SSO after all."
         },
         {
-          "ts": "1729526400.000100",
+          "ts": "1792598400.000100",
           "user": "U_PM_CASEY",
           "text": "For the record, SCIM for Acme is deferred to Q1 — that's still what's on our roadmap for this quarter."
         }
@@ -43,12 +43,12 @@
       "name": "eng-auth",
       "messages": [
         {
-          "ts": "1728738000.000100",
+          "ts": "1791810000.000100",
           "user": "U_ENG_PRIYA",
           "text": "For the record on the Acme work: this is SAML-based SSO with Okta, targeting December. SP-initiated flow is in review now."
         },
         {
-          "ts": "1728824400.000200",
+          "ts": "1791896400.000200",
           "user": "U_ENG_ALEX",
           "text": "Started scaffolding the SCIM endpoints for Acme this week too, ahead of the broader rollout."
         }
@@ -59,7 +59,7 @@
       "name": "globex-onboarding",
       "messages": [
         {
-          "ts": "1730826600.000100",
+          "ts": "1793898600.000100",
           "user": "U_CS_MORGAN",
           "text": "Kickoff done with Globex. Provisioning the US tenant tomorrow, 50 seats per the handoff notes."
         }
@@ -70,17 +70,17 @@
       "name": "incidents",
       "messages": [
         {
-          "ts": "1764243000.000100",
+          "ts": "1795779000.000100",
           "user": "U_ENG_ALEX",
           "text": "18:10 IST — checkout API 5xx spike, suspect our 18:00 deploy. Rolling back now."
         },
         {
-          "ts": "1764244800.000200",
+          "ts": "1795780800.000200",
           "user": "U_ENG_ALEX",
           "text": "18:40 IST — rolled back, no change in error rate. Now looking at AWS us-east-1 — ELB is showing degraded health checks. This looks like the real root cause, not our deploy."
         },
         {
-          "ts": "1764245520.000300",
+          "ts": "1795781520.000300",
           "user": "U_ENG_ALEX",
           "text": "18:52 IST — recovered. 12% of requests failed between 18:05 and 18:52. Acme and Globex both affected. ~300 writes were queued during the window and are replaying now."
         }
