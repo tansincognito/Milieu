@@ -29,6 +29,7 @@ from app.api import (
     incidents,
     jobs,
     org_setup,
+    simulation,
     slack,
     sources,
 )
@@ -82,5 +83,6 @@ app.include_router(gaps.router)
 app.include_router(handoffs.router)
 app.include_router(incidents.router)
 app.include_router(org_setup.router)
+app.include_router(simulation.router)
 app.include_router(dashboard.router)
 app.include_router(jobs.router)

@@ -1,0 +1,17 @@
+# Workflow 5 (Engineering -> Product -> Sales -> Customer, upstream): the first hop of a
+# technical constraint propagating the WRONG direction through the usual sales->product->
+# engineering pipeline -- engineering discovers a real limitation and must get it back to
+# Product before Product (or Sales) promises something engineering can't deliver.
+id: engineering_to_product
+from_stage: engineering
+to_stage: product
+fields:
+  - name: constraints
+    check: propagate
+    types: [constraint]
+    slots: [rationale, due_date]
+    importance: critical
+  - name: problems
+    check: propagate
+    types: [problem]
+    importance: high

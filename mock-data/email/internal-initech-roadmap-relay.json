@@ -1,0 +1,14 @@
+{
+  "thread_id": "internal-initech-roadmap-relay-001",
+  "subject": "Initech — multi-region date",
+  "messages": [
+    {
+      "message_id": "internal-initech-roadmap-relay-001-msg1",
+      "from": "sam.rivera@ourcompany.com",
+      "to": ["jordan.lee@ourcompany.com"],
+      "cc": [],
+      "date": "2026-10-15T12:00:00-05:00",
+      "text": "Jordan — for Initech: multi-region deployment ships Q2 2027, EU region only. That's the committed scope. US-West and APAC have no date yet, please don't imply either is part of the Q2 commitment."
+    }
+  ]
+}

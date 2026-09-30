@@ -1,0 +1,14 @@
+{
+  "thread_id": "globex-renewal-discount-thread-001",
+  "subject": "Globex renewal — terms",
+  "messages": [
+    {
+      "message_id": "globex-renewal-discount-thread-001-msg1",
+      "from": "taylor.brooks@ourcompany.com",
+      "to": ["jamie.fox@globex.com"],
+      "cc": [],
+      "date": "2026-10-21T14:00:00-05:00",
+      "text": "Jamie — to get the renewal signed this quarter, I can offer 20% off list on the Enterprise tier, and we can do it on a quarterly commitment if that's easier for your budgeting cycle this year. Let me know and I'll get paperwork moving."
+    }
+  ]
+}

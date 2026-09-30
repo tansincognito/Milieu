@@ -39,6 +39,7 @@ _STAGE_NAMES = {
     "product": "Product",
     "engineering": "Engineering",
     "customer_success": "Customer Success",
+    "leadership": "Leadership",
 }
 
 

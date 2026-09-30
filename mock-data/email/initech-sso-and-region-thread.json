@@ -1,0 +1,14 @@
+{
+  "thread_id": "initech-sso-and-region-thread-001",
+  "subject": "Initech — deployment regions",
+  "messages": [
+    {
+      "message_id": "initech-sso-and-region-thread-001-msg1",
+      "from": "jordan.lee@ourcompany.com",
+      "to": ["robin.patel@initech.com"],
+      "cc": [],
+      "date": "2026-10-17T09:30:00-05:00",
+      "text": "Robin — good news on the multi-region question: this is shipping Q2 2027, so you'll have full regional coverage in time for your rollout. Let me know if you want to get this into the contract as a delivery date."
+    }
+  ]
+}

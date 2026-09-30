@@ -19,6 +19,16 @@
         "Globex Corporation",
         "Globex Corp"
       ]
+    },
+    {
+      "slug": "initech",
+      "name": "Initech",
+      "kind": "customer",
+      "aliases": [
+        "Initech",
+        "Initech Inc.",
+        "Initech Corp"
+      ]
     }
   ],
   "org_domains": [
@@ -35,6 +45,11 @@
       "domain": "globex.com",
       "is_internal": false,
       "entity_slug": "globex"
+    },
+    {
+      "domain": "initech.com",
+      "is_internal": false,
+      "entity_slug": "initech"
     }
   ],
   "people": [
@@ -135,6 +150,14 @@
       "team": "leadership",
       "role": "CRO",
       "is_external": false
+    },
+    {
+      "email": "robin.patel@initech.com",
+      "slack_user_id": null,
+      "name": "Robin Patel",
+      "team": null,
+      "role": "VP Platform (Initech)",
+      "is_external": true
     }
   ],
   "slack_channels": {
@@ -142,13 +165,15 @@
     "product": "product",
     "eng-auth": "engineering",
     "globex-onboarding": "customer_success",
-    "incidents": "engineering"
+    "incidents": "engineering",
+    "leadership": "leadership"
   },
   "slack_channel_ids": {
     "C_ACME_DEAL": "sales",
     "C_PRODUCT": "product",
     "C_ENG_AUTH": "engineering",
     "C_GLOBEX_ONBOARDING": "customer_success",
-    "C_INCIDENTS": "engineering"
+    "C_INCIDENTS": "engineering",
+    "C_LEADERSHIP": "leadership"
   }
 }

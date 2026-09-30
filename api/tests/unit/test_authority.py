@@ -47,3 +47,34 @@ def test_engineering_decision_in_engineering_stage_is_authority_3() -> None:
 
 def test_unresolved_actor_role_with_no_stage_is_authority_0() -> None:
     assert assign_authority(type_="requirement", actor_role="other", stage=None, speculative=False) == 0
+
+
+def test_leadership_decision_is_authority_4_regardless_of_speculative() -> None:
+    """Mirrors the product-decision rule: a CEO/CPO/CRO's own decision is unconditional
+    top authority, not demoted by hedged language the way a sales guess would be."""
+    assert (
+        assign_authority(
+            type_="decision", actor_role="leadership", stage="leadership", speculative=True
+        )
+        == 4
+    )
+
+
+def test_leadership_commitment_is_authority_4() -> None:
+    assert (
+        assign_authority(
+            type_="commitment", actor_role="leadership", stage="leadership", speculative=False
+        )
+        == 4
+    )
+
+
+def test_leadership_requirement_is_authority_3() -> None:
+    """Non-decision/commitment leadership statements get the same baseline as product and
+    engineering, not the unconditional top authority reserved for their own directives."""
+    assert (
+        assign_authority(
+            type_="requirement", actor_role="leadership", stage="leadership", speculative=False
+        )
+        == 3
+    )

@@ -33,12 +33,14 @@ TEAM_TO_STAGE: dict[str, str] = {
     "product": "product",
     "engineering": "engineering",
     "customer_success": "customer_success",
+    "leadership": "leadership",
 }
 
 TEAM_TO_ACTOR_ROLE: dict[str, str] = {
     "sales": "sales",
     "product": "product",
     "engineering": "engineering",
+    "leadership": "leadership",
     # customer_success has no actor_role counterpart in §4.3 — see module docstring.
 }
 

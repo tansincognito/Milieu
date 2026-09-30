@@ -31,7 +31,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
-STAGES = ("sales", "product", "engineering", "customer_success")
+STAGES = ("sales", "product", "engineering", "customer_success", "leadership")
 CONTEXT_TYPES = (
     "requirement",
     "decision",
@@ -48,6 +48,7 @@ ACTOR_ROLES = (
     "product",
     "engineering",
     "customer_success",
+    "leadership",
     "other",
     "system",
 )
@@ -538,4 +539,34 @@ class SimulationSeedSources(Base, TenantMixin):
             "tenant_id", "kind", "external_id", name="uq_simulation_seed_tenant_kind_external"
         ),
         CheckConstraint(f"kind IN {CONNECTION_KINDS}", name="ck_simulation_seed_kind"),
+    )
+
+
+SYNC_RUN_STATUSES = ("ok", "partial", "rate_limited", "auth_expired", "failed")
+
+
+class SyncRuns(Base):
+    """One simulated sync attempt (architecture v2 §5). Makes "authentication states,
+    failures, rate limits" an observable log instead of a static field: `POST
+    /connections/{kind}/sync` writes one of these per call, with a real (simulated)
+    chance of `rate_limited`/`auth_expired`/`failed`, not just always 'ok'."""
+
+    __tablename__ = "sync_runs"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connections.id"), nullable=False
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    items_seen: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    items_ingested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    items_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(f"status IN {SYNC_RUN_STATUSES}", name="ck_sync_runs_status"),
     )

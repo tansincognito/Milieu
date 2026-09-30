@@ -27,6 +27,7 @@ FOLDER_TO_STAGE: dict[str, Stage] = {
     "product": "product",
     "engineering": "engineering",
     "customer_success": "customer_success",
+    "leadership": "leadership",
 }
 
 

@@ -1,0 +1,17 @@
+# Workflow 3 (CRO -> Sales -> Customer, commitment/policy inconsistency): a CRO sets a
+# pricing/discount/commitment policy; Sales must apply it as stated when promising a
+# customer, not loosen or reinterpret it.
+id: leadership_to_sales
+from_stage: leadership
+to_stage: sales
+fields:
+  - name: policy_decisions
+    check: propagate
+    types: [decision]
+    slots: [rationale, plan]
+    importance: critical
+  - name: commitments
+    check: propagate
+    types: [commitment]
+    slots: [due_date, plan]
+    importance: high
