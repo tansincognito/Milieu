@@ -11,6 +11,8 @@ import type {
   ContextObjectOut,
   ContractDetailOut,
   ContractOut,
+  DashboardOut,
+  DashboardScope,
   DepartmentOut,
   EntityContextOut,
   EntityOut,
@@ -22,6 +24,7 @@ import type {
   IncidentContextPackOut,
   IncidentSummaryOut,
   JobStats,
+  PersonOut,
   ReviewRequest,
   SourceOut,
   TenantModeUpdate,
@@ -153,6 +156,13 @@ export const api = {
 
   getIncidentPack: (incidentId: string) =>
     request<IncidentContextPackOut>(`/incidents/${encodeURIComponent(incidentId)}`),
+
+  // ── Login / personalized dashboard ───────────────────────────────────────
+  resolvePerson: (email: string) =>
+    request<PersonOut>(`/people/resolve${qs({ email })}`),
+
+  getDashboard: (scope: DashboardScope, team?: string | null) =>
+    request<DashboardOut>(`/dashboard${qs({ scope, team: team ?? undefined })}`),
 };
 
 export { ApiError };

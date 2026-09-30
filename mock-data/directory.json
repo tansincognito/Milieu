@@ -4,19 +4,38 @@
       "slug": "acme",
       "name": "Acme Corp",
       "kind": "customer",
-      "aliases": ["Acme", "Acme Corp", "ACME Inc."]
+      "aliases": [
+        "Acme",
+        "Acme Corp",
+        "ACME Inc."
+      ]
     },
     {
       "slug": "globex",
       "name": "Globex Corporation",
       "kind": "customer",
-      "aliases": ["Globex", "Globex Corporation", "Globex Corp"]
+      "aliases": [
+        "Globex",
+        "Globex Corporation",
+        "Globex Corp"
+      ]
     }
   ],
   "org_domains": [
-    { "domain": "ourcompany.com", "is_internal": true },
-    { "domain": "acme.com", "is_internal": false, "entity_slug": "acme" },
-    { "domain": "globex.com", "is_internal": false, "entity_slug": "globex" }
+    {
+      "domain": "ourcompany.com",
+      "is_internal": true
+    },
+    {
+      "domain": "acme.com",
+      "is_internal": false,
+      "entity_slug": "acme"
+    },
+    {
+      "domain": "globex.com",
+      "is_internal": false,
+      "entity_slug": "globex"
+    }
   ],
   "people": [
     {
@@ -92,6 +111,30 @@
       "role": "VP Engineering (Globex)",
       "is_external": true,
       "company_entity_slug": "globex"
+    },
+    {
+      "email": "morgan.ellis@ourcompany.com",
+      "slack_user_id": "U_CEO_MORGAN",
+      "name": "Morgan Ellis",
+      "team": "leadership",
+      "role": "CEO",
+      "is_external": false
+    },
+    {
+      "email": "jordan.vega@ourcompany.com",
+      "slack_user_id": "U_CPO_JORDAN",
+      "name": "Jordan Vega",
+      "team": "leadership",
+      "role": "CPO",
+      "is_external": false
+    },
+    {
+      "email": "riley.chen@ourcompany.com",
+      "slack_user_id": "U_CRO_RILEY",
+      "name": "Riley Chen",
+      "team": "leadership",
+      "role": "CRO",
+      "is_external": false
     }
   ],
   "slack_channels": {

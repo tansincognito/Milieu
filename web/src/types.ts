@@ -358,3 +358,33 @@ export interface IncidentContextPackOut {
   open_gaps: string[];
   similar_past_incidents: string[];
 }
+
+// ── Login / personalized dashboard ───────────────────────────────────────
+
+export interface PersonOut {
+  id: string;
+  name: string;
+  email: string | null;
+  team: string | null;
+  role: string | null;
+}
+
+export interface DeadlineOut {
+  object: ContextObjectOut;
+  due_date: string;
+  due_date_precision: DueDatePrecision | null;
+  overdue: boolean;
+}
+
+export type DashboardScope = "personal" | "org";
+
+export interface DashboardOut {
+  scope: DashboardScope;
+  team: string | null;
+  contradictions: ContextObjectOut[];
+  decisions_pending: ContextObjectOut[];
+  deadlines_incoming: DeadlineOut[];
+  degradation_gaps: string[];
+  degradation_count: number;
+  incidents: string[];
+}

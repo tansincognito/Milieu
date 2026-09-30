@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     conflicts,
     context,
+    dashboard,
     entities,
     gaps,
     handoffs,
@@ -81,4 +82,5 @@ app.include_router(gaps.router)
 app.include_router(handoffs.router)
 app.include_router(incidents.router)
 app.include_router(org_setup.router)
+app.include_router(dashboard.router)
 app.include_router(jobs.router)

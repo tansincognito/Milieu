@@ -1,15 +1,25 @@
 import { useEffect, useState } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { ContextExplorer } from "./pages/ContextExplorer";
 import { ContextStandalone } from "./pages/ContextStandalone";
 import { EntityPicker } from "./pages/EntityPicker";
 import { HandoffReport } from "./pages/HandoffReport";
 import { IncidentPack } from "./pages/IncidentPack";
+import { Login } from "./pages/Login";
+import { MyDashboard } from "./pages/MyDashboard";
 import { OrgFlows } from "./pages/OrgFlows";
 import { OrgSetup } from "./pages/OrgSetup";
 import { ReviewQueue } from "./pages/ReviewQueue";
+import { loadSession } from "./session";
 import type { JobStats, TenantMode } from "./types";
+
+// "/" is the login gate: signed in -> the personalized dashboard (the pasted spec's
+// "logs in, checks I'm in engineering, brings me the dashboard"); signed out -> /login.
+function RootGate() {
+  const person = loadSession();
+  return <Navigate to={person ? "/me" : "/login"} replace />;
+}
 
 // Simulation/production switch (migration 0006, §5). Production is a real state the
 // backend accepts as a value but refuses to activate (409) until a real connector exists —
@@ -61,6 +71,7 @@ function TopNav() {
   const [stats, setStats] = useState<JobStats | null>(null);
   const [loadingMock, setLoadingMock] = useState(false);
   const [loadMsg, setLoadMsg] = useState<string | null>(null);
+  const person = loadSession();
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +108,12 @@ function TopNav() {
     <div className="topnav">
       <span className="brand">Milieu</span>
       <nav>
-        <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
+        {person && (
+          <NavLink to="/me" className={({ isActive }) => (isActive ? "active" : "")}>
+            My dashboard
+          </NavLink>
+        )}
+        <NavLink to="/entities" className={({ isActive }) => (isActive ? "active" : "")}>
           Entities
         </NavLink>
         <NavLink to="/flows" className={({ isActive }) => (isActive ? "active" : "")}>
@@ -146,7 +162,10 @@ export default function App() {
       <TopNav />
       <div className="main">
         <Routes>
-          <Route path="/" element={<EntityPicker />} />
+          <Route path="/" element={<RootGate />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/me" element={<MyDashboard />} />
+          <Route path="/entities" element={<EntityPicker />} />
           <Route path="/entities/:entityId" element={<ContextExplorer />} />
           <Route path="/entities/:entityId/handoffs" element={<HandoffReport />} />
           <Route path="/context/:contextId" element={<ContextStandalone />} />
