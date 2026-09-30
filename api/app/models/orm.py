@@ -283,10 +283,30 @@ class CapabilityVocab(Base):
     __tablename__ = "capability_vocab"
 
     slug: Mapped[str] = mapped_column(String, primary_key=True)
+    # Confirmed hierarchy edge (e.g. saml.parent_slug = "sso"), set by a human review action.
+    # Distinct from `suggested_parent_slug` below, which is an unconfirmed machine guess.
     parent_slug: Mapped[str | None] = mapped_column(
         String, ForeignKey("capability_vocab.slug"), nullable=True
     )
+    # Confirmed alternate spellings/phrasings of this slug. `capability_resolution.py`
+    # matches a new proposal against these (as well as `slug` itself) before deciding the
+    # proposal is genuinely new.
     synonyms: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    # 'confirmed' rows are real, matchable vocabulary; 'candidate' rows are unreviewed
+    # proposals the extractor made that a human hasn't looked at yet. Mirrors
+    # entity_aliases.status (§7.1) — same two-state review pattern, applied to capabilities.
+    status: Mapped[str] = mapped_column(String, nullable=False, default="candidate")
+    # An unconfirmed near-match found at resolution time (similarity in the candidate band,
+    # below the auto-link threshold) — "this might be the same thing as X", for a reviewer
+    # to accept (promoting this proposal to a synonym of X) or reject (confirming it stands
+    # alone). Never used to build a subject_key; only `slug` is.
+    suggested_parent_slug: Mapped[str | None] = mapped_column(
+        String, ForeignKey("capability_vocab.slug"), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('confirmed', 'candidate')", name="ck_capability_vocab_status"),
+    )
 
 
 class ContextContracts(Base):

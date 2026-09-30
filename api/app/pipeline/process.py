@@ -23,8 +23,9 @@ from app.directory.resolve import (
 )
 from app.embedding.base import EmbeddingClient
 from app.llm.base import LLMClient
-from app.models.orm import CapabilityVocab, ContextObjects, ContextVersions, Entities, Sources
+from app.models.orm import ContextObjects, ContextVersions, Entities, Sources
 from app.pipeline.authority import assign_authority
+from app.pipeline.capability_resolution import resolve_capability
 from app.pipeline.entity_resolution import resolve_entity
 from app.pipeline.evidence import EvidenceSpanError, compute_evidence_span
 from app.pipeline.extraction_cache import (
@@ -262,7 +263,17 @@ def process_extraction_job(
     directory = SqlAlchemyPeopleDirectory(db)
 
     accepted: list[
-        tuple[ExtractedContext, tuple[int, int], str, str, uuid.UUID | None, uuid.UUID, int, bool]
+        tuple[
+            ExtractedContext,
+            tuple[int, int],
+            str,
+            str,
+            uuid.UUID | None,
+            uuid.UUID,
+            int,
+            str,
+            bool,
+        ]
     ] = []
     rejected = 0
     for item in result.items:
@@ -292,11 +303,18 @@ def process_extraction_job(
             type_=item.type, actor_role=actor_role, stage=source.stage, speculative=item.speculative
         )
 
-        vocab_row = db.get(CapabilityVocab, item.subject_capability)
-        is_new_capability = vocab_row is None
-        if is_new_capability:
-            db.add(CapabilityVocab(slug=item.subject_capability, parent_slug=None, synonyms=[]))
-            db.flush()
+        # §4.2's subject_key identity, not just a review-routing flag: the model's raw
+        # `subject_capability` string is a hint, never used directly (see
+        # capability_resolution.py module docstring for why an unstable raw string here
+        # silently fragments a topic's whole ledger across multiple subject_keys).
+        capability_resolution = resolve_capability(db, item.subject_capability)
+        if capability_resolution.snapped:
+            logger.info(
+                "capability %r snapped to confirmed slug %r for source %s",
+                item.subject_capability,
+                capability_resolution.slug,
+                source_id,
+            )
 
         accepted.append(
             (
@@ -307,7 +325,8 @@ def process_extraction_job(
                 actor_person_id,
                 entity_id,
                 authority,
-                is_new_capability,
+                capability_resolution.slug,
+                capability_resolution.is_new,
             )
         )
 
@@ -337,11 +356,12 @@ def process_extraction_job(
         actor_person_id,
         entity_id,
         authority,
+        capability_slug,
         is_new_capability,
     ), embedding in zip(accepted, embeddings, strict=True):
         entity = db.get(Entities, entity_id)
         assert entity is not None
-        subject_key = _build_subject_key(entity.slug, item.subject_capability, item.attributes)
+        subject_key = _build_subject_key(entity.slug, capability_slug, item.attributes)
         status = _determine_status(item.confidence, is_new_capability)
         attributes_json = item.attributes.model_dump(mode="json", exclude_none=True)
         # §7.3: "corrects"/"corrects_hint" ride along in attributes.extra — they're not a
