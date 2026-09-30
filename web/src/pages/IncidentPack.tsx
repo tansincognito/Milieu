@@ -10,7 +10,11 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError } from "../api";
-import type { IncidentContextPackOut, IncidentSummaryOut } from "../types";
+import type { IncidentContextPackOut, IncidentSeverity, IncidentSummaryOut } from "../types";
+
+function SeverityBadge({ severity, small }: { severity: IncidentSeverity; small?: boolean }) {
+  return <span className={`incident-badge ${small ? "small" : ""}`}>{severity}</span>;
+}
 
 function SlotCard({
   title,
@@ -53,11 +57,14 @@ function IncidentPackView({ incidentId }: { incidentId: string }) {
   return (
     <div className="incident-pack">
       <div className="incident-header">
-        <span className="incident-badge">P0</span>
+        <SeverityBadge severity={pack.severity} />
         <div>
-          <h2>{pack.incident_id}</h2>
+          <h2>
+            {pack.title} <span className="muted">({pack.incident_id})</span>
+          </h2>
           <div className="sub">
-            Affects: {pack.entities.join(", ") || "no customer identified"}
+            {pack.status === "resolved" ? "Resolved" : "Open"} · Affects:{" "}
+            {pack.entities.join(", ") || "no customer identified"}
           </div>
         </div>
       </div>
@@ -110,17 +117,33 @@ function IncidentPackView({ incidentId }: { incidentId: string }) {
 
       <section>
         <h3>Previous similar incidents</h3>
+        <p className="legend">
+          Other resolved incidents sharing at least one affected customer — not ranked by
+          similarity, just the real, honest version of this feature for now.
+        </p>
         {pack.similar_past_incidents.length === 0 ? (
           <p className="muted">
-            None in this account's history yet — only one incident exists in the current
-            dataset.
+            None — no other resolved incident shares a customer with this one yet.
           </p>
         ) : (
-          <ul>
-            {pack.similar_past_incidents.map((id) => (
-              <li key={id}>{id}</li>
+          <div className="incident-list">
+            {pack.similar_past_incidents.map((s) => (
+              <Link
+                key={s.incident_id}
+                className="incident-list-row"
+                to={`/incidents/${encodeURIComponent(s.incident_id)}`}
+              >
+                <SeverityBadge severity={s.severity} small />
+                <div>
+                  <div className="incident-list-id">{s.title}</div>
+                  <div className="sub">
+                    {s.entities.join(", ")} · {new Date(s.declared_at).toLocaleDateString()} ·{" "}
+                    {s.object_count} item{s.object_count === 1 ? "" : "s"}
+                  </div>
+                </div>
+              </Link>
             ))}
-          </ul>
+          </div>
         )}
       </section>
 
@@ -165,13 +188,16 @@ export function IncidentPack() {
             className="incident-list-row"
             to={`/incidents/${encodeURIComponent(i.incident_id)}`}
           >
-            <span className="incident-badge small">P0</span>
+            <SeverityBadge severity={i.severity} small />
             <div>
-              <div className="incident-list-id">{i.incident_id}</div>
+              <div className="incident-list-id">
+                {i.title} <span className="muted">({i.incident_id})</span>
+              </div>
               <div className="sub">
+                {i.status === "resolved" ? "Resolved" : "Open"} ·{" "}
                 {i.entities.join(", ") || "unidentified customer"} ·{" "}
-                {i.first_seen_at ? new Date(i.first_seen_at).toLocaleString() : "no timestamp"} ·{" "}
-                {i.object_count} linked item{i.object_count === 1 ? "" : "s"}
+                {new Date(i.declared_at).toLocaleString()} · {i.object_count} linked item
+                {i.object_count === 1 ? "" : "s"}
               </div>
             </div>
           </Link>

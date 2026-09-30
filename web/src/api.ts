@@ -13,6 +13,7 @@ import type {
   ContractOut,
   DashboardOut,
   DashboardScope,
+  DeclareIncidentRequest,
   DepartmentOut,
   EntityContextOut,
   EntityOut,
@@ -156,6 +157,20 @@ export const api = {
 
   getIncidentPack: (incidentId: string) =>
     request<IncidentContextPackOut>(`/incidents/${encodeURIComponent(incidentId)}`),
+
+  declareIncident: (body: DeclareIncidentRequest) =>
+    request<IncidentSummaryOut>("/incidents", { method: "POST", body: JSON.stringify(body) }),
+
+  resolveIncident: (incidentId: string) =>
+    request<IncidentSummaryOut>(`/incidents/${encodeURIComponent(incidentId)}/resolve`, {
+      method: "POST",
+    }),
+
+  linkIncidentObject: (incidentId: string, contextObjectId: string, linked: boolean) =>
+    request<IncidentSummaryOut>(`/incidents/${encodeURIComponent(incidentId)}/link`, {
+      method: "POST",
+      body: JSON.stringify({ context_object_id: contextObjectId, linked }),
+    }),
 
   // ── Login / personalized dashboard ───────────────────────────────────────
   resolvePerson: (email: string) =>

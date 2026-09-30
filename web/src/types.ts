@@ -325,12 +325,20 @@ export interface FlowSummaryOut {
   last_validated_at: string | null;
 }
 
-// ── Incident Context Pack ────────────────────────────────────────────────
+// ── Incident Context Pack (backed by a first-class `incidents` table, migration 0009) ───
+
+export type IncidentSeverity = "P0" | "P1" | "P2";
+export type IncidentStatus = "open" | "resolved";
 
 export interface IncidentSummaryOut {
+  id: string;
   incident_id: string;
+  title: string;
+  severity: IncidentSeverity;
+  status: IncidentStatus;
   entities: string[];
-  first_seen_at: string | null;
+  declared_at: string;
+  resolved_at: string | null;
   object_count: number;
 }
 
@@ -346,8 +354,20 @@ export interface IncidentPeopleOut {
   object_count: number;
 }
 
-export interface IncidentContextPackOut {
+export interface DeclareIncidentRequest {
   incident_id: string;
+  title: string;
+  severity?: IncidentSeverity;
+  entity_ids: string[];
+  anchor_at?: string;
+}
+
+export interface IncidentContextPackOut {
+  id: string;
+  incident_id: string;
+  title: string;
+  severity: IncidentSeverity;
+  status: IncidentStatus;
   entities: string[];
   timeline: IncidentTimelineEntryOut[];
   people: IncidentPeopleOut[];
@@ -356,7 +376,7 @@ export interface IncidentContextPackOut {
   root_cause: ContextObjectOut | null;
   remediation: ContextObjectOut | null;
   open_gaps: string[];
-  similar_past_incidents: string[];
+  similar_past_incidents: IncidentSummaryOut[];
 }
 
 // ── Login / personalized dashboard ───────────────────────────────────────

@@ -570,3 +570,69 @@ class SyncRuns(Base):
     __table_args__ = (
         CheckConstraint(f"status IN {SYNC_RUN_STATUSES}", name="ck_sync_runs_status"),
     )
+
+
+INCIDENT_SEVERITIES = ("P0", "P1", "P2")
+INCIDENT_STATUSES = ("open", "resolved")
+
+
+class Incidents(Base, TenantMixin):
+    """First-class incident (migration 0009). Replaces reconstructing "everything about
+    this incident" from a subject_key pattern + a time-window guess at read time — see the
+    migration docstring for why that broke down beyond a single-incident demo, and how this
+    fixes I7 (an incident spanning more than one customer) via `IncidentEntities`."""
+
+    __tablename__ = "incidents"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    incident_id: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    severity: Mapped[str] = mapped_column(String, nullable=False, default="P1")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="open")
+    declared_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    declared_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("people.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "incident_id", name="uq_incidents_tenant_incident_id"),
+        CheckConstraint(f"severity IN {INCIDENT_SEVERITIES}", name="ck_incidents_severity"),
+        CheckConstraint(f"status IN {INCIDENT_STATUSES}", name="ck_incidents_status"),
+    )
+
+
+class IncidentEntities(Base):
+    """Many-to-many: which customer(s) an incident affects. Plural by design (I7)."""
+
+    __tablename__ = "incident_entities"
+
+    incident_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("incidents.id"), primary_key=True
+    )
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("entities.id"), primary_key=True
+    )
+
+
+class IncidentContextObjects(Base):
+    """Which context objects belong to an incident. `linked=True` is a confirmed tie
+    (the object carried the real incident_id, or a human confirmed it); `linked=False` is
+    an unreviewed candidate the correlation heuristic suggested — same capability, inside
+    the incident's declared window. Mirrors `entity_aliases.status`'s confirmed/candidate
+    pattern (§7.1), applied to incident correlation instead of entity aliasing."""
+
+    __tablename__ = "incident_context_objects"
+
+    incident_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("incidents.id"), primary_key=True
+    )
+    context_object_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("context_objects.id"), primary_key=True
+    )
+    linked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
