@@ -100,3 +100,59 @@ def test_ack_marks_done(queue: PostgresJobQueue) -> None:
             assert status == "done"
     finally:
         _cleanup(job_type)
+
+
+def test_reclaim_stale_requeues_an_abandoned_running_job(queue: PostgresJobQueue) -> None:
+    """A worker that's SIGKILLed mid-job (not a graceful shutdown) leaves its claimed job in
+    `running` forever -- `claim()` only ever looks at `queued` rows. Found live (2026-10-01):
+    restarting the worker process mid-session orphaned two real jobs this way. Backdates
+    `updated_at` directly (not a real sleep) to prove the age check, not the clock."""
+    job_type = f"test_reclaim_{uuid.uuid4().hex[:8]}"
+    try:
+        queue.enqueue(job_type, {"n": 1}, f"{job_type}:a")
+        job = queue.claim([job_type])
+        assert job is not None
+
+        with SessionFactory() as db:
+            db.execute(
+                text("UPDATE processing_jobs SET updated_at = now() - interval '1 hour' WHERE id = :id"),
+                {"id": job.id},
+            )
+            db.commit()
+
+        reclaimed = queue.reclaim_stale(timeout_seconds=600)
+        assert reclaimed == 1
+
+        with SessionFactory() as db:
+            status = db.execute(
+                text("SELECT status FROM processing_jobs WHERE id = :id"), {"id": job.id}
+            ).scalar_one()
+            assert status == "queued"
+
+        # And it's claimable again -- the actual point of resetting it.
+        reclaimed_job = queue.claim([job_type])
+        assert reclaimed_job is not None
+        assert reclaimed_job.id == job.id
+    finally:
+        _cleanup(job_type)
+
+
+def test_reclaim_stale_leaves_a_genuinely_in_flight_job_alone(queue: PostgresJobQueue) -> None:
+    """The whole point of the timeout: a job claimed moments ago (still legitimately being
+    worked on) must NOT be reset out from under its worker."""
+    job_type = f"test_reclaim_live_{uuid.uuid4().hex[:8]}"
+    try:
+        queue.enqueue(job_type, {"n": 1}, f"{job_type}:a")
+        job = queue.claim([job_type])
+        assert job is not None
+
+        reclaimed = queue.reclaim_stale(timeout_seconds=600)
+        assert reclaimed == 0
+
+        with SessionFactory() as db:
+            status = db.execute(
+                text("SELECT status FROM processing_jobs WHERE id = :id"), {"id": job.id}
+            ).scalar_one()
+            assert status == "running"
+    finally:
+        _cleanup(job_type)

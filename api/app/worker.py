@@ -22,6 +22,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("app.worker")
 
 POLL_INTERVAL_SECONDS = 1.0
+# Comfortably longer than the LLM client's own 180s request timeout, so this never reclaims
+# a job that's still genuinely in flight -- only one truly abandoned by a dead worker.
+STALE_JOB_TIMEOUT_SECONDS = 600
 
 
 def run_once(
@@ -68,6 +71,12 @@ def main() -> None:
     redis_client = build_redis_client(settings)
     llm = build_llm_client(settings)
     embedder = build_embedding_client(settings)
+
+    reclaimed = queue.reclaim_stale(STALE_JOB_TIMEOUT_SECONDS)
+    if reclaimed:
+        logger.warning(
+            "reclaimed %d job(s) stuck in 'running' (a previous worker died mid-job)", reclaimed
+        )
 
     logger.info("worker started (model=%s), polling for jobs", settings.llm_model)
     while True:

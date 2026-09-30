@@ -9,11 +9,14 @@ from app.core.config import Settings
 from app.embedding.base import EmbeddingClient
 from app.embedding.fastembed_client import FastEmbedClient
 from app.llm.base import LLMClient
+from app.llm.groq import GroqLLMClient
 from app.llm.openrouter import OpenRouterLLMClient
 from app.slack.client import HttpSlackClient, SlackClient
 
 
 def build_llm_client(settings: Settings) -> LLMClient:
+    if settings.llm_provider == "groq":
+        return GroqLLMClient(api_key=settings.groq_api_key, model=settings.llm_model)
     if settings.llm_provider != "openrouter":
         raise ValueError(f"unsupported LLM_PROVIDER: {settings.llm_provider!r}")
     return OpenRouterLLMClient(
