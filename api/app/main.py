@@ -1,6 +1,6 @@
 """FastAPI app (§15): /health, /sources/mock/load, /sources/slack/events,
 /sources/slack/interactions, /context/*, /entities/*, /conflicts/*, /gaps/*, /handoffs/*,
-/jobs/stats.
+/flows, /incidents/*, /tenant, /connections, /departments, /jobs/stats.
 
 CORS is enabled for the local dashboard dev server (`web/`, Vite on 5173 by default) —
 the API has no cookie-based auth in the MVP (§14, principals are a query param), so an
@@ -18,7 +18,19 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import conflicts, context, entities, gaps, handoffs, health, jobs, slack, sources
+from app.api import (
+    conflicts,
+    context,
+    entities,
+    gaps,
+    handoffs,
+    health,
+    incidents,
+    jobs,
+    org_setup,
+    slack,
+    sources,
+)
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.pipeline.contracts import load_contracts
@@ -67,4 +79,6 @@ app.include_router(entities.router)
 app.include_router(conflicts.router)
 app.include_router(gaps.router)
 app.include_router(handoffs.router)
+app.include_router(incidents.router)
+app.include_router(org_setup.router)
 app.include_router(jobs.router)

@@ -4,19 +4,28 @@
 import type {
   ConflictPairOut,
   ConflictResolveRequest,
+  ConnectionKind,
+  ConnectionOut,
   ContextHistoryOut,
   ContextLineageOut,
   ContextObjectOut,
+  ContractDetailOut,
   ContractOut,
+  DepartmentOut,
   EntityContextOut,
   EntityOut,
+  FlowSummaryOut,
   GapOut,
   GapReviewRequest,
   HandoffReportOut,
   HandoffValidationOut,
+  IncidentContextPackOut,
+  IncidentSummaryOut,
   JobStats,
   ReviewRequest,
   SourceOut,
+  TenantModeUpdate,
+  TenantOut,
 } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
@@ -100,6 +109,9 @@ export const api = {
 
   listContracts: () => request<ContractOut[]>("/contracts"),
 
+  getContractDetail: (contractId: string) =>
+    request<ContractDetailOut>(`/contracts/${encodeURIComponent(contractId)}`),
+
   listEntityHandoffs: (entityId: string) =>
     request<HandoffReportOut[]>(`/entities/${entityId}/handoffs`),
 
@@ -116,6 +128,31 @@ export const api = {
     ),
 
   jobStats: () => request<JobStats>("/jobs/stats"),
+
+  // ── Org setup / simulation mode ──────────────────────────────────────────
+  getTenant: () => request<TenantOut>("/tenant"),
+
+  setTenantMode: (body: TenantModeUpdate) =>
+    request<TenantOut>("/tenant/mode", { method: "PATCH", body: JSON.stringify(body) }),
+
+  listConnections: () => request<ConnectionOut[]>("/connections"),
+
+  setConnection: (kind: ConnectionKind, connect: boolean) =>
+    request<ConnectionOut>(`/connections/${kind}`, {
+      method: "PATCH",
+      body: JSON.stringify({ connect }),
+    }),
+
+  listDepartments: () => request<DepartmentOut[]>("/departments"),
+
+  // ── Organizational Flows ─────────────────────────────────────────────────
+  listFlows: () => request<FlowSummaryOut[]>("/flows"),
+
+  // ── Incident Context Pack ────────────────────────────────────────────────
+  listIncidents: () => request<IncidentSummaryOut[]>("/incidents"),
+
+  getIncidentPack: (incidentId: string) =>
+    request<IncidentContextPackOut>(`/incidents/${encodeURIComponent(incidentId)}`),
 };
 
 export { ApiError };

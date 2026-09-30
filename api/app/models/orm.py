@@ -443,3 +443,99 @@ class EvalResults(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+TENANT_MODES = ("simulation", "production")
+
+
+class Tenants(Base):
+    """First-class tenant row. Until now `tenant_id` was just a UUID scattered across every
+    table via `TenantMixin`, with the one tenant anyone actually used hardcoded in
+    `Settings.tenant_id` -- there was nothing to attach tenant-level configuration to.
+
+    `mode` is the simulation/production switch: 'simulation' (the only functional value
+    today) means every connected source reads from `simulation_seed_sources` below instead
+    of a real external API. 'production' is accepted as a value but not yet wired to any
+    real connector -- no real Gmail/Slack/Drive OAuth exists yet (architecture v2 §5) -- so
+    `PATCH /tenant/mode` refuses to switch into it rather than silently no-op.
+    """
+
+    __tablename__ = "tenants"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    mode: Mapped[str] = mapped_column(String, nullable=False, default="simulation")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (CheckConstraint(f"mode IN {TENANT_MODES}", name="ck_tenants_mode"),)
+
+
+CONNECTION_KINDS = ("slack", "email", "drive", "call", "directory")
+CONNECTION_PROVIDERS = ("simulation", "google", "microsoft", "okta", "slack_api")
+CONNECTION_STATUSES = ("disconnected", "pending", "connected", "error")
+
+
+class Connections(Base, TenantMixin):
+    """One connected source (§5 of architecture v2). The org setup screen's source
+    checkboxes are literally this table: checking "Slack" creates/updates a row here with
+    `provider='simulation'` and `status='connected'`; the ingestion path checks this table
+    before a connector kind is allowed to run."""
+
+    __tablename__ = "connections"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False, default="simulation")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="disconnected")
+    external_account: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "kind", name="uq_connections_tenant_kind"),
+        CheckConstraint(f"kind IN {CONNECTION_KINDS}", name="ck_connections_kind"),
+        CheckConstraint(f"provider IN {CONNECTION_PROVIDERS}", name="ck_connections_provider"),
+        CheckConstraint(f"status IN {CONNECTION_STATUSES}", name="ck_connections_status"),
+    )
+
+
+class SimulationSeedSources(Base, TenantMixin):
+    """A simulated API response, stored in Postgres instead of a flat file on disk.
+
+    This is the "stored in a Postgres table" requirement: today's mock connectors
+    (`app/connectors/mock_*.py`) read `/mock-data/*` directly off disk. This table is where
+    that content lives instead, in the same shape a connector's `fetch()` already
+    constructs (`kind`, `external_id`, `payload`, `source_ts`) -- the payload is exactly
+    what a real API would hand back, so a future real connector and the simulation
+    connector can share the same downstream `normalize()` step.
+
+    NOTE (scoped honestly, see the session's dispatch notes): this table is populated by
+    `scripts/import_mock_data_to_postgres.py` from the existing `/mock-data` files, but the
+    connector read path has NOT been switched over to it yet -- `app/connectors/mock_*.py`
+    still reads disk files today, unchanged, so nothing about the already-verified
+    ingestion/eval/dashboard path is put at risk by adding this table. The switch is the
+    next piece of this work, not done in this pass.
+    """
+
+    __tablename__ = "simulation_seed_sources"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    external_id: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    source_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "kind", "external_id", name="uq_simulation_seed_tenant_kind_external"
+        ),
+        CheckConstraint(f"kind IN {CONNECTION_KINDS}", name="ck_simulation_seed_kind"),
+    )

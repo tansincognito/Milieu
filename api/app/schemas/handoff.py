@@ -40,6 +40,23 @@ class ContractOut(BaseModel):
     field_count: int
 
 
+class ContractFieldOut(BaseModel):
+    name: str
+    check: str
+    types: list[str]
+    slots: list[str]
+    importance: str
+    min_upstream_authority: int
+    rule: str | None = None
+
+
+class ContractDetailOut(ContractOut):
+    """The Organizational Flows screen's "click a flow, see its Context Contract" —
+    §9's typed checklist, not just the summary count."""
+
+    fields: list[ContractFieldOut]
+
+
 class HandoffValidateAllRequest(BaseModel):
     """Run every loaded contract for one entity in a single call.
 
