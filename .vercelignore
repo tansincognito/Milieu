@@ -1,0 +1,12 @@
+# Only web/ is deployed here (see vercel.json). api/ has its own uv-managed Python
+# dependencies, a long-running worker process, and needs real Postgres/Redis -- none of
+# which exist in this build. Without this, Vercel's zero-config detection auto-builds api/
+# as serverless functions anyway (found live, 2026-10-01: a ~300MB bundle each build,
+# flirting with Vercel's size limit, for functions with no DB/Redis/env wired to them and
+# no caller). api/ needs separate hosting; see docs/DECISIONS.md and vercel.json's commit.
+api/
+mock-data/
+docs/
+contracts/
+scripts/
+*.md
