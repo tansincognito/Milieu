@@ -4,19 +4,32 @@
 import type {
   ConflictPairOut,
   ConflictResolveRequest,
+  ConnectionKind,
+  ConnectionOut,
   ContextHistoryOut,
   ContextLineageOut,
   ContextObjectOut,
+  ContractDetailOut,
   ContractOut,
+  DashboardOut,
+  DashboardScope,
+  DeclareIncidentRequest,
+  DepartmentOut,
   EntityContextOut,
   EntityOut,
+  FlowSummaryOut,
   GapOut,
   GapReviewRequest,
   HandoffReportOut,
   HandoffValidationOut,
+  IncidentContextPackOut,
+  IncidentSummaryOut,
   JobStats,
+  PersonOut,
   ReviewRequest,
   SourceOut,
+  TenantModeUpdate,
+  TenantOut,
 } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
@@ -100,6 +113,9 @@ export const api = {
 
   listContracts: () => request<ContractOut[]>("/contracts"),
 
+  getContractDetail: (contractId: string) =>
+    request<ContractDetailOut>(`/contracts/${encodeURIComponent(contractId)}`),
+
   listEntityHandoffs: (entityId: string) =>
     request<HandoffReportOut[]>(`/entities/${entityId}/handoffs`),
 
@@ -116,6 +132,52 @@ export const api = {
     ),
 
   jobStats: () => request<JobStats>("/jobs/stats"),
+
+  // ── Org setup / simulation mode ──────────────────────────────────────────
+  getTenant: () => request<TenantOut>("/tenant"),
+
+  setTenantMode: (body: TenantModeUpdate) =>
+    request<TenantOut>("/tenant/mode", { method: "PATCH", body: JSON.stringify(body) }),
+
+  listConnections: () => request<ConnectionOut[]>("/connections"),
+
+  setConnection: (kind: ConnectionKind, connect: boolean) =>
+    request<ConnectionOut>(`/connections/${kind}`, {
+      method: "PATCH",
+      body: JSON.stringify({ connect }),
+    }),
+
+  listDepartments: () => request<DepartmentOut[]>("/departments"),
+
+  // ── Organizational Flows ─────────────────────────────────────────────────
+  listFlows: () => request<FlowSummaryOut[]>("/flows"),
+
+  // ── Incident Context Pack ────────────────────────────────────────────────
+  listIncidents: () => request<IncidentSummaryOut[]>("/incidents"),
+
+  getIncidentPack: (incidentId: string) =>
+    request<IncidentContextPackOut>(`/incidents/${encodeURIComponent(incidentId)}`),
+
+  declareIncident: (body: DeclareIncidentRequest) =>
+    request<IncidentSummaryOut>("/incidents", { method: "POST", body: JSON.stringify(body) }),
+
+  resolveIncident: (incidentId: string) =>
+    request<IncidentSummaryOut>(`/incidents/${encodeURIComponent(incidentId)}/resolve`, {
+      method: "POST",
+    }),
+
+  linkIncidentObject: (incidentId: string, contextObjectId: string, linked: boolean) =>
+    request<IncidentSummaryOut>(`/incidents/${encodeURIComponent(incidentId)}/link`, {
+      method: "POST",
+      body: JSON.stringify({ context_object_id: contextObjectId, linked }),
+    }),
+
+  // ── Login / personalized dashboard ───────────────────────────────────────
+  resolvePerson: (email: string) =>
+    request<PersonOut>(`/people/resolve${qs({ email })}`),
+
+  getDashboard: (scope: DashboardScope, team?: string | null) =>
+    request<DashboardOut>(`/dashboard${qs({ scope, team: team ?? undefined })}`),
 };
 
 export { ApiError };

@@ -15,7 +15,10 @@ from app.core.db import get_db
 from app.models.orm import ContextContracts, ContextGaps, Entities, HandoffValidations
 from app.pipeline.contracts import get_contract
 from app.pipeline.handoff import validate_handoff
+from app.schemas.flows import FlowSummaryOut
 from app.schemas.handoff import (
+    ContractDetailOut,
+    ContractFieldOut,
     ContractOut,
     HandoffReportOut,
     HandoffValidateAllRequest,
@@ -24,6 +27,67 @@ from app.schemas.handoff import (
 )
 
 router = APIRouter()
+
+
+@router.get("/flows", response_model=list[FlowSummaryOut])
+def list_flows(db: Session = Depends(get_db)) -> list[FlowSummaryOut]:
+    """Organizational Flows screen: every loaded contract with real counts aggregated
+    across ALL entities -- "how many accounts does this handoff apply to, and how many
+    open losses does it currently have" -- rather than one entity's report.
+
+    Only the LATEST validation per (entity, contract) counts, matching
+    `list_entity_handoff_reports`'s reasoning: re-running a handoff produces a new
+    `handoff_validations` row, and this must reflect current state, not every historical
+    run stacked on top of itself.
+    """
+    contracts = db.query(ContextContracts).order_by(ContextContracts.id).all()
+
+    # Latest validation id per (entity_id, contract_id), computed once for every contract.
+    all_validations = (
+        db.query(HandoffValidations)
+        .order_by(HandoffValidations.created_at.desc())
+        .all()
+    )
+    latest_by_pair: dict[tuple[uuid.UUID, str], HandoffValidations] = {}
+    for v in all_validations:
+        key = (v.entity_id, v.contract_id)
+        latest_by_pair.setdefault(key, v)
+
+    latest_by_contract: dict[str, list[HandoffValidations]] = {}
+    for v in latest_by_pair.values():
+        latest_by_contract.setdefault(v.contract_id, []).append(v)
+
+    out: list[FlowSummaryOut] = []
+    for contract in contracts:
+        validations = latest_by_contract.get(contract.id, [])
+        validation_ids = [v.id for v in validations]
+        gaps = (
+            db.query(ContextGaps)
+            .filter(ContextGaps.validation_id.in_(validation_ids), ContextGaps.status == "open")
+            .all()
+            if validation_ids
+            else []
+        )
+        by_band: dict[str, int] = {}
+        for g in gaps:
+            by_band[g.severity_band] = by_band.get(g.severity_band, 0) + 1
+        last_at = max((v.created_at for v in validations), default=None)
+
+        out.append(
+            FlowSummaryOut(
+                contract=ContractOut(
+                    id=contract.id,
+                    from_stage=contract.from_stage,
+                    to_stage=contract.to_stage,
+                    field_count=len(contract.spec.get("fields", [])),
+                ),
+                entities_validated=len(validations),
+                open_gaps=len(gaps),
+                gaps_by_severity_band=by_band,
+                last_validated_at=last_at.isoformat() if last_at else None,
+            )
+        )
+    return out
 
 
 @router.get("/contracts", response_model=list[ContractOut])
@@ -65,6 +129,33 @@ def run_handoff_validation(
         as_of=validation.as_of,
         created_at=validation.created_at,
         summary=validation.summary,
+    )
+
+
+@router.get("/contracts/{contract_id}", response_model=ContractDetailOut)
+def get_contract_detail(contract_id: str, db: Session = Depends(get_db)) -> ContractDetailOut:
+    """§9's typed field checklist for one contract — the Organizational Flows screen's
+    "click a flow to see its Context Contract"."""
+    spec = get_contract(db, contract_id)
+    if spec is None:
+        raise HTTPException(status_code=404, detail="contract not found")
+    return ContractDetailOut(
+        id=spec.id,
+        from_stage=spec.from_stage,
+        to_stage=spec.to_stage,
+        field_count=len(spec.fields),
+        fields=[
+            ContractFieldOut(
+                name=f.name,
+                check=f.check,
+                types=f.types,
+                slots=f.slots,
+                importance=f.importance,
+                min_upstream_authority=f.min_upstream_authority,
+                rule=f.rule,
+            )
+            for f in spec.fields
+        ],
     )
 
 

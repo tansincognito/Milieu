@@ -13,9 +13,14 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://milieu:milieu@localhost:5544/milieu"
     redis_url: str = "redis://localhost:6389/0"
 
+    # "openrouter" or "groq" — see app/core/factories.py. Groq is the fallback: its free
+    # tier runs on Groq's own hardware with its own account limits, not OpenRouter's pooled
+    # free-tier capacity shared across every user (the actual cause of this project's
+    # sustained 429s, not the specific model chosen within OpenRouter).
     llm_provider: str = "openrouter"
     openrouter_api_key: str = ""
-    llm_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    groq_api_key: str = ""
+    llm_model: str = "nvidia/nemotron-3.5-lightning:free"
     openrouter_app_name: str = "Milieu"
     openrouter_site_url: str = "https://github.com/milieu"
 

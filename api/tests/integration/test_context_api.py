@@ -14,6 +14,7 @@ from psycopg.types.range import Range
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
+from app.core.config import get_settings
 from app.core.db import engine
 from app.main import app
 from app.models.orm import ContextObjects, ContextRelations, Entities, Sources
@@ -156,18 +157,58 @@ def test_review_edit_keeps_source_and_evidence(client: TestClient, seeded: dict)
     assert body["evidence_quote"] == original_evidence
 
 
-def test_entities_list_and_entity_context(client: TestClient, seeded: dict) -> None:
-    resp = client.get("/entities")
-    assert resp.status_code == 200
-    slugs = {row["slug"] for row in resp.json()}
-    assert seeded["entity"].slug in slugs
+def test_entities_list_and_entity_context(client: TestClient) -> None:
+    # GET /entities and GET /entities/{id}/context are both scoped to the real default
+    # tenant (app.core.config.get_settings().tenant_id) -- there's no auth/session layer
+    # yet to make a request "belong" to any other tenant, so this test seeds there
+    # directly (via explicit-id cleanup, never a blanket tenant_id delete, to avoid
+    # touching any of that tenant's real demo data) instead of reusing the `seeded`
+    # fixture's isolated random tenant_id, which these two endpoints can no longer see.
+    db = SessionFactory()
+    tenant_id = uuid.UUID(get_settings().tenant_id)
+    entity = Entities(
+        id=uuid.uuid4(), tenant_id=tenant_id, name="Test Entity",
+        slug=f"test-entity-{uuid.uuid4().hex[:8]}", kind="customer",
+    )
+    db.add(entity)
+    db.flush()
+    source = Sources(
+        id=uuid.uuid4(), tenant_id=tenant_id, kind="drive", external_id=uuid.uuid4().hex,
+        content_hash=uuid.uuid4().hex, stage="sales", acl=["*"], provenance={"kind": "drive"},
+        text="Acme needs SSO", source_ts=T0,
+    )
+    db.add(source)
+    db.flush()
+    obj = ContextObjects(
+        id=uuid.uuid4(), tenant_id=tenant_id, entity_id=entity.id, type="requirement",
+        subject_key="test:sso", content="Acme requires SSO", attributes={"protocol": "SAML"},
+        actor_label="Dana Kim", actor_role="customer", stage="sales", authority=4,
+        confidence=0.95, status="active", valid_from=T0, source_id=source.id,
+        evidence_quote="Acme needs SSO", evidence_span=Range(0, 14), embedding=[0.1] * 384,
+        version=1, created_at=T0, updated_at=T0,
+    )
+    db.add(obj)
+    db.commit()
 
-    resp = client.get(f"/entities/{seeded['entity'].id}/context")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["entity"]["slug"] == seeded["entity"].slug
-    types_present = {group["type"] for group in body["current"]}
-    assert "requirement" in types_present
+    try:
+        resp = client.get("/entities")
+        assert resp.status_code == 200
+        slugs = {row["slug"] for row in resp.json()}
+        assert entity.slug in slugs
+
+        resp = client.get(f"/entities/{entity.id}/context")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["entity"]["slug"] == entity.slug
+        types_present = {group["type"] for group in body["current"]}
+        assert "requirement" in types_present
+    finally:
+        db.rollback()
+        db.execute(text("DELETE FROM context_objects WHERE id = :id"), {"id": obj.id})
+        db.execute(text("DELETE FROM sources WHERE id = :id"), {"id": source.id})
+        db.execute(text("DELETE FROM entities WHERE id = :id"), {"id": entity.id})
+        db.commit()
+        db.close()
 
 
 def test_conflicts_resolve_winner(client: TestClient, seeded: dict) -> None:

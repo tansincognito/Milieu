@@ -215,6 +215,20 @@ export interface ContractOut {
   field_count: number;
 }
 
+export interface ContractFieldOut {
+  name: string;
+  check: string;
+  types: string[];
+  slots: string[];
+  importance: string;
+  min_upstream_authority: number;
+  rule: string | null;
+}
+
+export interface ContractDetailOut extends ContractOut {
+  fields: ContractFieldOut[];
+}
+
 export interface HandoffValidationOut {
   id: string;
   entity_id: string;
@@ -265,4 +279,132 @@ export interface JobStats {
   done: number;
   failed: number;
   poison: number;
+}
+
+// ── Org setup / simulation mode (migration 0006) ────────────────────────────
+
+export type TenantMode = "simulation" | "production";
+
+export interface TenantOut {
+  id: string;
+  name: string;
+  mode: TenantMode;
+}
+
+export interface TenantModeUpdate {
+  mode: TenantMode;
+}
+
+export type ConnectionKind = "slack" | "email" | "drive" | "call" | "directory";
+export type ConnectionStatus = "disconnected" | "pending" | "connected" | "error";
+
+export interface ConnectionOut {
+  id: string | null;
+  kind: ConnectionKind;
+  provider: string;
+  status: ConnectionStatus;
+  external_account: string | null;
+  last_synced_at: string | null;
+  last_error: string | null;
+  seed_rows: number;
+}
+
+export interface DepartmentOut {
+  slug: string;
+  name: string;
+  configurable: boolean;
+}
+
+// ── Organizational Flows ─────────────────────────────────────────────────
+
+export interface FlowSummaryOut {
+  contract: ContractOut;
+  entities_validated: number;
+  open_gaps: number;
+  gaps_by_severity_band: Record<string, number>;
+  last_validated_at: string | null;
+}
+
+// ── Incident Context Pack (backed by a first-class `incidents` table, migration 0009) ───
+
+export type IncidentSeverity = "P0" | "P1" | "P2";
+export type IncidentStatus = "open" | "resolved";
+
+export interface IncidentSummaryOut {
+  id: string;
+  incident_id: string;
+  title: string;
+  severity: IncidentSeverity;
+  status: IncidentStatus;
+  entities: string[];
+  declared_at: string;
+  resolved_at: string | null;
+  object_count: number;
+}
+
+export interface IncidentTimelineEntryOut {
+  object: ContextObjectOut;
+  at: string;
+  linked: boolean;
+}
+
+export interface IncidentPeopleOut {
+  actor_label: string;
+  actor_role: string;
+  object_count: number;
+}
+
+export interface DeclareIncidentRequest {
+  incident_id: string;
+  title: string;
+  severity?: IncidentSeverity;
+  entity_ids: string[];
+  anchor_at?: string;
+}
+
+export interface IncidentContextPackOut {
+  id: string;
+  incident_id: string;
+  title: string;
+  severity: IncidentSeverity;
+  status: IncidentStatus;
+  entities: string[];
+  timeline: IncidentTimelineEntryOut[];
+  people: IncidentPeopleOut[];
+  impact: ContextObjectOut | null;
+  sla_impact: ContextObjectOut | null;
+  root_cause: ContextObjectOut | null;
+  remediation: ContextObjectOut | null;
+  open_gaps: string[];
+  similar_past_incidents: IncidentSummaryOut[];
+}
+
+// ── Login / personalized dashboard ───────────────────────────────────────
+
+export interface PersonOut {
+  id: string;
+  name: string;
+  email: string | null;
+  team: string | null;
+  role: string | null;
+}
+
+export interface DeadlineOut {
+  object: ContextObjectOut;
+  due_date: string;
+  due_date_precision: DueDatePrecision | null;
+  overdue: boolean;
+}
+
+export type DashboardScope = "personal" | "org";
+
+export interface DashboardOut {
+  scope: DashboardScope;
+  team: string | null;
+  contradictions: ContextObjectOut[];
+  decisions_pending: ContextObjectOut[];
+  deadlines_incoming: DeadlineOut[];
+  degradation_gaps: string[];
+  degradation_count: number;
+  incidents: string[];
 }

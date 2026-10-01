@@ -209,7 +209,13 @@ Other rules:
    breach and remediation, which all belong to that one incident's items. `uptime_sla` is only
    for the contractual uptime guarantee itself, never for a specific outage event.
 4. `entity_hint` is the customer/company name the statement is about (e.g. "Acme", "Globex"),
-   taken from the text or from context in the document (title, participants).
+   taken from the text or from context in the document (title, participants). It must name
+   exactly one company, never a list ("Acme, Globex" is wrong -- pick whichever one the
+   statement is primarily about, or split into separate items if the text genuinely makes a
+   distinct claim per company) and never a region, market segment, or other non-company
+   grouping ("EU customers", "enterprise tier" are not an `entity_hint` -- put the region in
+   the `region` slot instead and leave `entity_hint` null here). Leave it null whenever the
+   text doesn't name a specific company.
 5. `corrects` is true when the text explicitly signals it is replacing an earlier statement
    ("update:", "correction", "actually", "rolled back", "back in scope", "supersedes", or a
    reply that contradicts an earlier one). Set `corrects_hint` to a quote of what's being

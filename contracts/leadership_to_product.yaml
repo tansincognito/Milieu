@@ -1,0 +1,20 @@
+# Workflow 2 (CPO -> Product -> Sales -> Customer, decision/roadmap drift) and workflow 4
+# (CEO -> Leadership -> Product/Engineering, strategic priority propagation): both start
+# with a leadership decision that Product must carry forward unchanged. authority.py gives
+# a leadership decision/commitment unconditional authority 4, same tier as a product
+# decision -- so if Product's own restatement waters it down, that's a real degradation,
+# not a lower-authority statement losing to a higher one.
+id: leadership_to_product
+from_stage: leadership
+to_stage: product
+fields:
+  - name: decisions
+    check: propagate
+    types: [decision]
+    slots: [rationale, priority, due_date]
+    importance: critical
+  - name: commitments
+    check: propagate
+    types: [commitment]
+    slots: [due_date]
+    importance: high

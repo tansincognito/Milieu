@@ -103,7 +103,7 @@ export function ContextExplorer() {
           <button className="btn" onClick={() => navigate(`/entities/${entityId}/handoffs`)}>
             Handoff report →
           </button>
-          <button className="btn" onClick={() => navigate("/")}>
+          <button className="btn" onClick={() => navigate("/entities")}>
             ← All entities
           </button>
         </div>

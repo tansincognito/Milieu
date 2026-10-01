@@ -55,6 +55,7 @@ from app.models.orm import Sources
 from app.pipeline.prewarm import prewarm_extractions
 from app.pipeline.process import process_extraction_job
 from app.pipeline.seed_directory import load_directory, load_slack_channel_stage_map
+from app.pipeline.seed_simulation_sources import seed_simulation_sources
 from app.schemas.sources import NormalizedSource
 
 # Fixed, dedicated tenant for eval runs -- never the dev default tenant
@@ -211,12 +212,13 @@ def _ordered_ingest(
 
     directory = SqlAlchemyPeopleDirectory(db)
     channel_stage_map = load_slack_channel_stage_map(directory_path)
+    seed_simulation_sources(db, tenant_id, mock_data_dir)
 
     connectors: list[SourceConnector] = [
-        MockDriveConnector(mock_data_dir / "drive"),
-        MockCallConnector(mock_data_dir / "calls"),
-        MockEmailConnector(mock_data_dir / "email", directory, tenant_id),
-        MockSlackSeedConnector(mock_data_dir / "slack" / "seed.json", channel_stage_map),
+        MockDriveConnector(db, tenant_id),
+        MockCallConnector(db, tenant_id),
+        MockEmailConnector(db, tenant_id, directory),
+        MockSlackSeedConnector(db, tenant_id, channel_stage_map),
     ]
 
     counts = {"sources_created": 0, "sources_skipped": 0, "consent_rejected": 0}

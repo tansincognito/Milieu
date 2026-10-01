@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 SourceKind = Literal["slack", "email", "drive", "call", "api"]
-Stage = Literal["sales", "product", "engineering", "customer_success"]
+Stage = Literal["sales", "product", "engineering", "customer_success", "leadership"]
 
 
 class SlackProvenance(BaseModel):

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.context import context_object_to_out
 from app.api.permissions import acl_visible
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.models.orm import ContextGaps, ContextObjects, Entities, Sources
 from app.schemas.context import (
@@ -50,7 +51,18 @@ def _source_counts(db: Session, entity_id: uuid.UUID, principals: list[str] | No
 def list_entities(
     principal: list[str] | None = Query(default=None), db: Session = Depends(get_db)
 ) -> list[EntityOut]:
-    entities = db.query(Entities).order_by(Entities.name.asc()).all()
+    # Found live (2026-10-01): this had no tenant_id filter at all, so the entity picker
+    # showed every tenant's rows interleaved -- eval runs (a fixed EVAL_TENANT_ID) and
+    # leftover test tenants each have their own "Acme Corp"/"Unknown"/etc., which rendered
+    # as what looked like duplicate entities in the UI even though each tenant's own data
+    # was internally consistent.
+    tenant_id = uuid.UUID(get_settings().tenant_id)
+    entities = (
+        db.query(Entities)
+        .filter(Entities.tenant_id == tenant_id)
+        .order_by(Entities.name.asc())
+        .all()
+    )
     out = []
     for entity in entities:
         open_conflicts = (
@@ -83,7 +95,12 @@ def get_entity_context(
     principal: list[str] | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> EntityContextOut:
-    entity = db.get(Entities, entity_id)
+    tenant_id = uuid.UUID(get_settings().tenant_id)
+    entity = (
+        db.query(Entities)
+        .filter(Entities.id == entity_id, Entities.tenant_id == tenant_id)
+        .first()
+    )
     if entity is None:
         raise HTTPException(status_code=404, detail="entity not found")
 

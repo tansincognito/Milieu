@@ -18,13 +18,19 @@ def assign_authority(
     if actor_role == "product" and type_ == "decision":
         # "Every team member is accountable, so there is no approver list."
         return 4
+    if actor_role == "leadership" and type_ in ("decision", "commitment"):
+        # Same unconditional top-authority treatment as a product decision: a CEO/CPO/CRO's
+        # own directive or commitment is not "speculative sales hedging" by nature, it's the
+        # thing every downstream handoff is measured against (pasted workflow table: CPO/
+        # CRO/CEO are each the ORIGIN of a propagation test, not a restatement of one).
+        return 4
     if speculative:
         return 1
     if actor_role == "sales":
         # Sales owns `commitment`s (its own promises); everything else is sales
         # restating what the customer/product said, one level down.
         return 3 if type_ == "commitment" else 2
-    if actor_role in ("product", "engineering"):
+    if actor_role in ("product", "engineering", "leadership"):
         return 3
     if actor_role == "other" and stage is not None:
         # actor_role has no `customer_success` value (§4.3 gap, see

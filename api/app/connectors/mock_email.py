@@ -1,4 +1,7 @@
-"""MockEmailConnector: JSON thread files under `mock-data/email/*.json`.
+"""MockEmailConnector: reads `simulation_seed_sources` (kind='email'), one row per thread,
+seeded from `mock-data/email/*.json` by `app.pipeline.seed_simulation_sources` -- the same
+rows `/connections/email/sync` and `/simulation/search` already read, so there's one copy of
+this data instead of two drifting in and out of sync.
 
 One source per message. Stage comes from the sender's directory lookup (§3.1), not from
 config — an internal sender takes their team's stage, a known customer domain resolves to
@@ -8,28 +11,38 @@ config — an internal sender takes their team's stage, a known customer domain 
 from __future__ import annotations
 
 import hashlib
-import json
 import uuid
 from collections.abc import Iterable
 from datetime import datetime
-from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.connectors.base import RawSource
 from app.directory.resolve import PeopleDirectory, resolve_person
+from app.models.orm import SimulationSeedSources
 from app.schemas.sources import EmailProvenance, NormalizedSource, SourceKind
 
 
 class MockEmailConnector:
     kind: SourceKind = "email"
 
-    def __init__(self, root: Path, directory: PeopleDirectory, tenant_id: uuid.UUID) -> None:
-        self._root = root
-        self._directory = directory
+    def __init__(self, db: Session, tenant_id: uuid.UUID, directory: PeopleDirectory) -> None:
+        self._db = db
         self._tenant_id = tenant_id
+        self._directory = directory
 
     def fetch(self, since: datetime | None) -> Iterable[RawSource]:
-        for path in sorted(self._root.glob("*.json")):
-            thread = json.loads(path.read_text(encoding="utf-8"))
+        rows = self._db.execute(
+            select(SimulationSeedSources)
+            .where(
+                SimulationSeedSources.tenant_id == self._tenant_id,
+                SimulationSeedSources.kind == "email",
+            )
+            .order_by(SimulationSeedSources.external_id)
+        ).scalars()
+        for row in rows:
+            thread = row.payload
             thread_id = thread["thread_id"]
             subject = thread["subject"]
             for message in thread["messages"]:

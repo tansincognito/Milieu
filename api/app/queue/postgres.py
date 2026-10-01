@@ -81,6 +81,19 @@ class PostgresJobQueue:
             )
             db.commit()
 
+    def reclaim_stale(self, timeout_seconds: int) -> int:
+        with self._session_factory() as db:
+            result = db.execute(
+                text(
+                    "UPDATE processing_jobs SET status = 'queued', run_after = now() "
+                    "WHERE status = 'running' "
+                    "AND updated_at < now() - make_interval(secs => :timeout_seconds)"
+                ),
+                {"timeout_seconds": timeout_seconds},
+            )
+            db.commit()
+            return result.rowcount
+
     def fail(self, job_id: uuid.UUID, error: str, retry_after: float | None = None) -> None:
         with self._session_factory() as db:
             attempts = db.execute(

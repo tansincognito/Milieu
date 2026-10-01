@@ -1,4 +1,6 @@
-"""MockSlackSeedConnector: `mock-data/slack/seed.json`.
+"""MockSlackSeedConnector: reads `simulation_seed_sources` (kind='slack'), one row per
+channel, seeded from `mock-data/slack/seed.json` by `app.pipeline.seed_simulation_sources`
+-- the same rows `/connections/slack/sync` and `/simulation/search` already read.
 
 One source per message. Stage comes from a channel -> stage config map (§3), not from
 the directory; `actor_role` is resolved later in the pipeline from `provenance.author_id`
@@ -6,32 +8,46 @@ via the people directory. Unmapped channels get a null stage (still ingested, ex
 from handoffs per §3).
 
 This is distinct from the real `SlackConnector` (Events API, §12) — that's the next
-dispatch. This connector only replays the dev seed file through `/sources/mock/load`.
+dispatch. This connector only replays the seeded data through `/sources/mock/load`.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
+import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.connectors.base import RawSource
+from app.models.orm import SimulationSeedSources
 from app.schemas.sources import NormalizedSource, SlackProvenance, SourceKind, Stage
 
 
 class MockSlackSeedConnector:
     kind: SourceKind = "slack"
 
-    def __init__(self, seed_path: Path, channel_stage_map: dict[str, Stage | None]) -> None:
-        self._seed_path = seed_path
+    def __init__(
+        self, db: Session, tenant_id: uuid.UUID, channel_stage_map: dict[str, Stage | None]
+    ) -> None:
+        self._db = db
+        self._tenant_id = tenant_id
         self._channel_stage_map = channel_stage_map
 
     def fetch(self, since: datetime | None) -> Iterable[RawSource]:
-        seed = json.loads(self._seed_path.read_text(encoding="utf-8"))
-        workspace_id = seed["workspace_id"]
-        for channel in seed["channels"]:
+        rows = self._db.execute(
+            select(SimulationSeedSources)
+            .where(
+                SimulationSeedSources.tenant_id == self._tenant_id,
+                SimulationSeedSources.kind == "slack",
+            )
+            .order_by(SimulationSeedSources.external_id)
+        ).scalars()
+        for row in rows:
+            channel = row.payload
+            workspace_id = channel["workspace_id"]
             for message in channel["messages"]:
                 yield RawSource(
                     kind="slack",

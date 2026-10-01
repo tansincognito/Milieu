@@ -16,6 +16,7 @@ from app.connectors.mock_slack_seed import MockSlackSeedConnector
 from app.directory.resolve import SqlAlchemyPeopleDirectory
 from app.pipeline.ingest import ingest_source
 from app.pipeline.seed_directory import load_directory, load_slack_channel_stage_map
+from app.pipeline.seed_simulation_sources import seed_simulation_sources
 from app.queue.base import JobQueue
 
 
@@ -28,16 +29,21 @@ def load_mock_data(
     directory = SqlAlchemyPeopleDirectory(db)
     channel_stage_map = load_slack_channel_stage_map(directory_path)
 
+    # Upsert disk -> `simulation_seed_sources` first, so the connectors below (and
+    # `/connections/{kind}/sync`, `/simulation/search`) all read the same rows instead of
+    # two copies of the same content that could drift apart.
+    seed_simulation_sources(db, tenant_id, mock_data_dir)
+
     connectors: list[SourceConnector] = [
-        MockDriveConnector(mock_data_dir / "drive"),
+        MockDriveConnector(db, tenant_id),
         # Calls before email: jobs process roughly in enqueue order (§13.1), not content
         # chronology, so for pairs where a call and an email both land on the same fact
         # (e.g. Globex: the customer's call statement should out-authority the AE's later
         # internal-email restatement per §7.3 R2), the higher-signal source needs to reach
         # `resolve_object_state` first.
-        MockCallConnector(mock_data_dir / "calls"),
-        MockEmailConnector(mock_data_dir / "email", directory, tenant_id),
-        MockSlackSeedConnector(mock_data_dir / "slack" / "seed.json", channel_stage_map),
+        MockCallConnector(db, tenant_id),
+        MockEmailConnector(db, tenant_id, directory),
+        MockSlackSeedConnector(db, tenant_id, channel_stage_map),
     ]
 
     counts = {
