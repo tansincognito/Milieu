@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -31,6 +31,18 @@ REVIEW_DUPLICATE_THRESHOLD = 0.80
 # otherwise-identical objects "incompatible".
 _IGNORED_EXTRA_KEYS = {"corrects", "corrects_hint"}
 
+# `rationale` is free-text explanatory prose (why a decision/stance was taken), not a
+# categorical/structured slot value -- unlike `root_cause`/`remediation` (§4.2 incident
+# slots), which state what actually happened/is being done and are meaningfully different
+# facts when they differ (confirmed by a real test: a corrected root_cause must still route
+# through R3 supersession, not get silently treated as compatible). Found live (2026-10-01):
+# two "SCIM deferred to Q1" extractions worded their `rationale` differently ("avoid
+# splitting focus before SSO lands" vs "SSO is the higher-leverage item for the renewal")
+# despite stating the identical fact -- a literal `!=` on free text flagged them as an
+# incompatible slot and routed a true duplicate into R4 ("conflicting") instead of dedup,
+# same failure class as the due_date-precision bug below.
+_FREE_TEXT_KEYS = {"rationale"}
+
 
 def cosine_similarity(a: list[float] | None, b: list[float] | None) -> float:
     if a is None or b is None:
@@ -44,10 +56,37 @@ def cosine_similarity(a: list[float] | None, b: list[float] | None) -> float:
     return dot / (norm_a * norm_b)
 
 
+def _quarter(d: date) -> int:
+    return (d.month - 1) // 3 + 1
+
+
+def _due_dates_compatible(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Two `due_date`s at the *same* precision describe the same point only up to that
+    precision's granularity -- "Q1" and "quarter"-precision due_date are the slot value,
+    not whatever single day the extractor happened to normalize it to. Found live
+    (2026-10-01): two independent "deferred to Q1" extractions normalized to 2027-01-01 and
+    2027-03-31 respectively -- same quarter, same stated precision, but a literal `!=`
+    compare treated them as a conflicting slot and both ended up `status='conflicting'` in
+    the dashboard, next to each other, looking like duplicated noise rather than the single
+    real fact they are. A day-precision date still needs an exact match; only a shared
+    coarser precision gets bucketed."""
+    a_raw, b_raw = a.get("due_date"), b.get("due_date")
+    a_precision, b_precision = a.get("due_date_precision"), b.get("due_date_precision")
+    if a_raw == b_raw:
+        return True
+    if a_precision != b_precision or a_precision not in ("month", "quarter"):
+        return bool(a_raw == b_raw)
+    a_date = a_raw if isinstance(a_raw, date) else date.fromisoformat(str(a_raw))
+    b_date = b_raw if isinstance(b_raw, date) else date.fromisoformat(str(b_raw))
+    if a_precision == "month":
+        return (a_date.year, a_date.month) == (b_date.year, b_date.month)
+    return (a_date.year, _quarter(a_date)) == (b_date.year, _quarter(b_date))
+
+
 def slots_compatible(a: dict[str, Any], b: dict[str, Any]) -> bool:
     """No slot present (non-null) in both `a` and `b` with a differing value."""
     for key, value in a.items():
-        if value is None:
+        if value is None or key in _FREE_TEXT_KEYS:
             continue
         if key == "extra":
             other_extra = b.get("extra") or {}
@@ -56,6 +95,28 @@ def slots_compatible(a: dict[str, Any], b: dict[str, Any]) -> bool:
                     continue
                 other_ev = other_extra.get(ek)
                 if other_ev is not None and other_ev != ev:
+                    return False
+            continue
+        if key == "due_date_precision":
+            # Compared as part of "due_date" below, not on its own -- a precision mismatch
+            # alone (e.g. "day" vs "quarter") isn't a conflicting slot value by itself.
+            continue
+        if key == "due_date":
+            other_value = b.get(key)
+            if other_value is not None and not _due_dates_compatible(a, b):
+                return False
+            continue
+        if key == "quantity_unit":
+            # Found alongside the due_date/rationale bug (2026-10-01): two extractions of
+            # the identical "8,000 users" fact wrote "users" and "provisioned users" --
+            # same unit, different wording, exact-match treated it as a conflicting slot.
+            # A containment check (lowercased) catches that and "users" vs "users per org"
+            # while still treating truly different units ("seats" vs "users") as
+            # incompatible, since neither contains the other.
+            other_value = b.get(key)
+            if other_value is not None and value != other_value:
+                v, o = value.lower(), other_value.lower()
+                if v not in o and o not in v:
                     return False
             continue
         other_value = b.get(key)
