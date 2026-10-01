@@ -8,29 +8,35 @@ A system that extracts structured, versioned, source-linked Context Objects from
 
 ## Status
 
-**MVP in progress** (`feature/mvp-1.0`):
-- **Day 1** ✓ Complete: multi-source ingestion (Slack, email, drive, calls) → Context Objects with live-verified extraction and Slack endpoints.
-- **Day 2** ✓ Complete: entity resolution, dedup, lifecycle/supersession/conflict rules, lineage, query + review APIs.
-- **Day 3** ⏸ Not started: Context Contracts, handoff validator, degradation detection, evals.
-- **Dashboard** ⏸ Not started.
+**MVP, Day 1-3 scope complete** (`feature/mvp-1.0`):
+- **Day 1** ✓ multi-source ingestion (Slack, email, drive, calls) → Context Objects with live-verified extraction and Slack endpoints.
+- **Day 2** ✓ entity resolution, dedup, lifecycle/supersession/conflict rules (R1-R5), lineage, query + review APIs.
+- **Day 3** ✓ Context Contracts, handoff validator, degradation detection, evals.
+- **Dashboard** ✓ personalized landing page (contradictions, pending decisions, deadlines, gaps, incidents), entity explorer, login + setup wizard.
+- **Incidents** ✓ first-class `incidents` table (multi-entity, with "previous similar incidents") replacing an earlier subject_key-pattern heuristic.
+- **Simulation layer** ✓ `tenants`/`connections`/`sync_runs` model a real connector's auth/cursor/failure surface against simulated data in `simulation_seed_sources`; mock connectors read from there (not disk) and `/connections/{kind}/sync` does a real ingest.
+- Not built: real OAuth connectors (Gmail/Slack/Drive), server-side session/auth (every request is implicitly the one configured tenant).
+
+See [docs/DECISIONS.md](docs/DECISIONS.md) for the concrete bugs found and fixed along the way, with the tradeoffs behind each one.
 
 ---
 
 ## Architecture at a glance
 
 ```
-ingest → normalize → queue → extract → resolve entity → dedupe → 
-lifecycle/supersession/conflict → persist → lineage → maybe handoff validation
+connections (mock, simulated) → ingest → normalize → queue → extract (evidence-bound)
+  → resolve entity → dedupe → lifecycle/supersession/conflict (R1-R5) → persist → lineage
+  → handoff validation → gaps/incidents → dashboard + entity explorer + review queue
 ```
 
 **Stack:**
 - **API & Worker:** FastAPI + async Python, `uv` for dependency management.
 - **Database:** PostgreSQL 17 (pgvector for embeddings, pg_trgm for entity resolution).
-- **Cache & Queue:** Redis (retrieval cache, job queue backing).
-- **LLM:** OpenRouter free tier (OpenAI-compatible API, swappable via `LLMClient` interface).
+- **Cache & Queue:** Redis (retrieval cache); job queue is Postgres-backed.
+- **LLM:** dual-provider via a shared `LLMClient` interface — OpenRouter (free tier, pooled capacity, the default) with Groq as a fallback (own hardware, per-account token budget; see `app/llm/groq.py` for the pacing this required).
 - **Embeddings:** fastembed local model (BAAI/bge-small-en-v1.5, 384 dims).
-- **Sources:** Real Slack endpoints + mock connectors for Drive, email, and call transcripts.
-- **Orchestration:** Docker Compose for local dev.
+- **Sources:** real Slack endpoints + mock connectors for Drive, email, and call transcripts, backed by `simulation_seed_sources` in Postgres.
+- **Orchestration:** Docker Compose for local dev (Postgres + Redis; API and worker run locally).
 
 ---
 
@@ -130,11 +136,11 @@ Completes in ~1–2 min after services are ready.
 | `/api` | FastAPI application, worker, Alembic migrations, Pydantic models. Entry point: `app.main:app`. Worker: `python -m app.worker`. |
 | `/api/app` | Main package: `pipeline/` (extraction, entity resolution, lifecycle), `llm/`, `embedding/`, `queue/`, `connectors/`, `slack/`, `api/` (routes), `main.py`. |
 | `/api/tests` | Unit and integration tests. Marked with `@pytest.mark.integration` for container tests. |
-| `/api/alembic/versions` | Database migrations. Current: `0001_initial_schema.py`, `0002_lifecycle_dedup_columns.py`. |
-| `/docs` | `SPEC.md` (product + technical spec, source of truth for data model and rules). |
-| `/mock-data` | Test fixtures: `drive/`, `email/`, `calls/`, `directory.json`, `slack/seed.json`. |
-| `/contracts` | Context Contract YAML seeds (Day 3; directory exists, contracts not written yet). |
-| `/scripts` | One-off developer scripts, e.g. `slot_probe.py` (how the extraction model and prompt were chosen). |
+| `/api/alembic/versions` | Database migrations, `0001`-`0009` (entities/context/lifecycle → lifecycle/dedup columns → actor roles → gap nullability → capability vocab review → simulation/tenants/connections → leadership stage → sync runs → incidents). |
+| `/docs` | `SPEC.md` (product + technical spec), `ARCHITECTURE-v2.md` (org-agnostic connector-first redesign, proposed), `DECISIONS.md` (concrete bugs found/fixed and the tradeoffs behind each fix, chronological). |
+| `/mock-data` | Test fixtures: `drive/`, `email/`, `calls/`, `directory.json`, `slack/seed.json`. Mirrored into Postgres (`simulation_seed_sources`) by `app/pipeline/seed_simulation_sources.py`. |
+| `/contracts` | Context Contract YAML seeds. |
+| `/scripts` | Developer/ops scripts: `slot_probe.py` (how the extraction model/prompt were chosen), `import_mock_data_to_postgres.py` (standalone `simulation_seed_sources` refresh), `reconcile_false_contradictions.py` (re-evaluates existing `contradicts` relations under the current dedup logic and corrects false positives), `declare_seed_incidents.py`. |
 | `docker-compose.yml` | Postgres (pgvector) and Redis only. The API and worker run locally via `uv`. |
 | `Makefile` | `make up`, `make down`, `make migrate`, `make check-fast`, `make check`. |
 | `.env.example` | Template for environment variables. Always keep empty-valued. Copy to `api/.env` and fill only locally. |
@@ -150,10 +156,18 @@ See `.env.example`. Key vars for local dev:
 DATABASE_URL=postgresql+psycopg://milieu:milieu@localhost:5544/milieu
 REDIS_URL=redis://localhost:6389/0
 
-# LLM (required for extraction)
+# LLM (required for extraction). LLM_PROVIDER is "openrouter" or "groq" (app/core/factories.py).
+# OpenRouter's free models share OpenRouter's own pooled capacity across every free-tier
+# user -- the real cause of sustained 429s, not the specific model. Groq's free tier runs on
+# its own hardware with per-account limits, so it's the fallback when OpenRouter's pool
+# saturates. Groq's real constraint is a tokens-per-minute budget (8000 TPM on the free
+# tier), not request count -- see app/llm/groq.py's docstring before changing LLM_MODEL
+# under Groq; qwen/qwen3.8-27b is ~2.2x more token-efficient than the gpt-oss-* reasoning
+# models at the same extraction quality.
 LLM_PROVIDER=openrouter
 OPENROUTER_API_KEY=<your free API key from https://openrouter.ai>
-LLM_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+GROQ_API_KEY=<optional, from https://console.groq.com>
+LLM_MODEL=nvidia/nemotron-3.5-lightning:free
 
 # Embeddings (local, no key needed)
 EMBEDDING_PROVIDER=fastembed
@@ -180,13 +194,20 @@ SCHEMA_VERSION=1
 | POST | `/sources/slack/events` | Slack Events API webhook |
 | POST | `/sources/mock/load` | Ingest mock data (dev only) |
 | GET | `/context/search` | Query active context |
-| GET | `/entities` | List entities |
+| GET | `/entities` | List entities, scoped to the configured tenant |
 | GET | `/entities/{id}/context` | Entity's grouped context, gaps, conflicts |
+| GET | `/dashboard` | Personalized landing page (contradictions, pending decisions, deadlines, gaps, incidents) |
+| POST | `/conflicts/{relation_id}/resolve` | Human resolution of an R4 conflict (R5) |
+| POST | `/gaps/{id}/review` | Human review of a handoff gap |
+| POST | `/incidents` | Declare an incident |
+| POST | `/incidents/{id}/link` | Link an entity/context object to an incident |
 | POST | `/handoffs/validate` | Run a handoff validation |
 | GET | `/handoffs/{id}` | Validation result + gaps |
+| POST | `/connections/{kind}/sync` | Sync a connection (`?simulate=rate_limited\|auth_expired\|failed` for a reproducible failure; otherwise a real ingest) |
+| GET | `/simulation/search` | Full-text search over simulated source content |
 | GET | `/health` | Health check (DB, Redis, queue depth) |
 
-See [SPEC.md § 15](docs/SPEC.md#15-api) for the full endpoint list.
+See [SPEC.md § 15](docs/SPEC.md#15-api) for the original endpoint list and `app/api/` for the current full set.
 
 ---
 
@@ -203,10 +224,10 @@ See [SPEC.md § 15](docs/SPEC.md#15-api) for the full endpoint list.
 
 ## References
 
-- **SPEC.md** — Product thesis, data model (§16), all rules (§5–§10), mock scenarios (§18), and evaluation criteria (§19).
-- **design.md** — User journeys and state flows (if it exists).
-- **architecture.md** — System topology and API contracts (if it exists).
+- **[docs/SPEC.md](docs/SPEC.md)** — Product thesis, data model (§16), all rules (§5–§10), mock scenarios (§18), and evaluation criteria (§19).
+- **[docs/ARCHITECTURE-v2.md](docs/ARCHITECTURE-v2.md)** — Proposed org-agnostic, connector-first redesign; what it supersedes in SPEC.md is listed in its §11.
+- **[docs/DECISIONS.md](docs/DECISIONS.md)** — Chronological log of concrete bugs found live and fixed, each with the tradeoff accepted.
 
 ---
 
-*MVP bootstrap: 2026-09-22. Last updated: 2026-09-25.*
+*MVP bootstrap: 2026-09-22. Last updated: 2026-10-01.*
