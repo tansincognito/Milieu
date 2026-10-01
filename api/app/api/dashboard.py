@@ -43,7 +43,8 @@ def resolve_person(email: str = Query(...), db: Session = Depends(get_db)) -> Pe
     )
 
 
-def _scoped(query, team: str | None):
+def _scoped(query, tenant_id: uuid.UUID, team: str | None):
+    query = query.filter(ContextObjects.tenant_id == tenant_id)
     if team is not None:
         query = query.filter(ContextObjects.stage == team)
     return query
@@ -58,9 +59,17 @@ def get_dashboard(
     if scope == "personal" and not team:
         raise HTTPException(status_code=422, detail="team is required when scope=personal")
     effective_team = team if scope == "personal" else None
+    # Found live (2026-10-01), same bug as `GET /entities`: none of this endpoint's queries
+    # filtered by tenant at all, so a dev/eval/test tenant's rows could leak into the
+    # "personal"/"org" dashboard alongside the real default tenant's data.
+    tenant_id = uuid.UUID(get_settings().tenant_id)
 
     contradictions = (
-        _scoped(db.query(ContextObjects).filter(ContextObjects.status == "conflicting"), effective_team)
+        _scoped(
+            db.query(ContextObjects).filter(ContextObjects.status == "conflicting"),
+            tenant_id,
+            effective_team,
+        )
         .order_by(ContextObjects.updated_at.desc())
         .limit(20)
         .all()
@@ -71,6 +80,7 @@ def get_dashboard(
             db.query(ContextObjects).filter(
                 ContextObjects.type == "decision", ContextObjects.status == "candidate"
             ),
+            tenant_id,
             effective_team,
         )
         .order_by(ContextObjects.created_at.desc())
@@ -83,6 +93,7 @@ def get_dashboard(
             ContextObjects.status == "active",
             ContextObjects.attributes["due_date"].isnot(None),
         ),
+        tenant_id,
         effective_team,
     ).all()
     today = datetime.now(UTC).date()
@@ -104,24 +115,29 @@ def get_dashboard(
     deadlines.sort(key=lambda d: d.due_date)
     deadlines = deadlines[:20]
 
-    open_gaps_query = db.query(ContextGaps.id).filter(ContextGaps.status == "open")
-    if effective_team is not None:
-        # A gap's upstream/downstream object carries the team; join through whichever side
-        # is present (upstream is nullable for present-check gaps — migration 0004).
-        open_gaps_query = open_gaps_query.join(
+    # ContextGaps has no tenant_id of its own (not TenantMixin) -- scoped only through its
+    # upstream/downstream ContextObjects FKs, same join already used for the team filter
+    # below, now required unconditionally rather than only when a team is given.
+    open_gaps_query = (
+        db.query(ContextGaps.id)
+        .filter(ContextGaps.status == "open")
+        .join(
             ContextObjects,
             (ContextObjects.id == ContextGaps.upstream_id)
             | (ContextObjects.id == ContextGaps.downstream_id),
-        ).filter(ContextObjects.stage == effective_team)
+        )
+        .filter(ContextObjects.tenant_id == tenant_id)
+    )
+    if effective_team is not None:
+        open_gaps_query = open_gaps_query.filter(ContextObjects.stage == effective_team)
     open_gap_ids = [row.id for row in open_gaps_query.distinct().limit(50)]
     degradation_count = (
-        db.query(ContextGaps.id).filter(ContextGaps.status == "open").count()
-        if effective_team is None
-        else len(open_gap_ids)
+        open_gaps_query.distinct().count() if effective_team is None else len(open_gap_ids)
     )
 
     incident_query = db.query(ContextObjects.attributes).filter(
-        ContextObjects.attributes["extra"]["incident_id"].isnot(None)
+        ContextObjects.tenant_id == tenant_id,
+        ContextObjects.attributes["extra"]["incident_id"].isnot(None),
     )
     if effective_team is not None:
         incident_query = incident_query.filter(ContextObjects.stage == effective_team)

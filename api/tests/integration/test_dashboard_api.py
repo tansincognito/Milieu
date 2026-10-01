@@ -14,6 +14,7 @@ from psycopg.types.range import Range
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
+from app.core.config import get_settings
 from app.core.db import engine
 from app.main import app
 from app.models.orm import (
@@ -202,9 +203,80 @@ def test_gap_review_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
-def test_entities_list_reports_open_gaps(client: TestClient, seeded: dict) -> None:
-    resp = client.get("/entities")
-    assert resp.status_code == 200
-    row = next(r for r in resp.json() if r["slug"] == seeded["entity"].slug)
-    assert row["open_gaps"] == 1
-    assert row["open_conflicts"] == 2
+def test_entities_list_reports_open_gaps(client: TestClient) -> None:
+    # GET /entities is scoped to the real default tenant (no auth/session layer yet), so
+    # this seeds there directly with explicit-id cleanup -- same reasoning as
+    # test_context_api.py::test_entities_list_and_entity_context.
+    db = SessionFactory()
+    tenant_id = uuid.UUID(get_settings().tenant_id)
+    entity = Entities(
+        id=uuid.uuid4(), tenant_id=tenant_id, name="Test Entity",
+        slug=f"test-entity-{uuid.uuid4().hex[:8]}", kind="customer",
+    )
+    db.add(entity)
+    db.flush()
+    source = Sources(
+        id=uuid.uuid4(), tenant_id=tenant_id, kind="drive", external_id=uuid.uuid4().hex,
+        content_hash=uuid.uuid4().hex, stage="sales", acl=["*"], provenance={"kind": "drive"},
+        text="Acme needs SSO via SAML", source_ts=T0,
+    )
+    db.add(source)
+    db.flush()
+    obj_a = ContextObjects(
+        id=uuid.uuid4(), tenant_id=tenant_id, entity_id=entity.id, type="requirement",
+        subject_key="test:sso", content="Acme requires SSO", attributes={"protocol": "SAML"},
+        actor_label="Dana Kim", actor_role="customer", stage="sales", authority=4,
+        confidence=0.95, status="conflicting", valid_from=T0, source_id=source.id,
+        evidence_quote="Acme needs SSO", evidence_span=Range(0, 14), embedding=[0.1] * 384,
+        version=1, created_at=T0, updated_at=T0,
+    )
+    obj_b = ContextObjects(
+        id=uuid.uuid4(), tenant_id=tenant_id, entity_id=entity.id, type="requirement",
+        subject_key="test:sso", content="SSO not required", attributes={"protocol": "OIDC"},
+        actor_label="Someone", actor_role="sales", stage="sales", authority=2, confidence=0.8,
+        status="conflicting", valid_from=T0 + timedelta(days=1), source_id=source.id,
+        evidence_quote="via SAML", evidence_span=Range(15, 24), embedding=[0.2] * 384,
+        version=1, created_at=T0, updated_at=T0,
+    )
+    db.add_all([obj_a, obj_b])
+    db.flush()
+    contract = ContextContracts(
+        id=f"test_contract_{uuid.uuid4().hex[:8]}", from_stage="sales", to_stage="product",
+        spec={}, version=1,
+    )
+    db.add(contract)
+    db.flush()
+    validation = HandoffValidations(
+        id=uuid.uuid4(), entity_id=entity.id, contract_id=contract.id, as_of=T0,
+        input_hash="x", summary={},
+    )
+    db.add(validation)
+    db.flush()
+    gap = ContextGaps(
+        id=uuid.uuid4(), validation_id=validation.id, contract_field="requirements",
+        upstream_id=obj_a.id, downstream_id=None, slot="protocol", outcome="object_missing",
+        severity=3.0, severity_band="high", inherited=False,
+        explanation="test gap", status="open",
+    )
+    db.add(gap)
+    db.commit()
+
+    try:
+        resp = client.get("/entities")
+        assert resp.status_code == 200
+        row = next(r for r in resp.json() if r["slug"] == entity.slug)
+        assert row["open_gaps"] == 1
+        assert row["open_conflicts"] == 2
+    finally:
+        db.rollback()
+        db.execute(text("DELETE FROM context_gaps WHERE id = :id"), {"id": gap.id})
+        db.execute(text("DELETE FROM handoff_validations WHERE id = :id"), {"id": validation.id})
+        db.execute(text("DELETE FROM context_contracts WHERE id = :id"), {"id": contract.id})
+        db.execute(
+            text("DELETE FROM context_objects WHERE id = ANY(:ids)"),
+            {"ids": [obj_a.id, obj_b.id]},
+        )
+        db.execute(text("DELETE FROM sources WHERE id = :id"), {"id": source.id})
+        db.execute(text("DELETE FROM entities WHERE id = :id"), {"id": entity.id})
+        db.commit()
+        db.close()
