@@ -24,6 +24,7 @@ from app.core.db import engine
 from app.models.orm import ContextObjects, ContextVersions, Entities, EntityAliases, Sources
 from app.pipeline.entity_resolution import resolve_entity
 from app.pipeline.process import process_extraction_job
+from app.pipeline.seed_simulation_sources import import_calls, import_drive
 from app.schemas.extraction import (
     ContextAttributes,
     ExtractedContext,
@@ -77,6 +78,9 @@ def db_session() -> Session:
     session.execute(text("DELETE FROM sources WHERE tenant_id = :t"), {"t": tenant_id})
     session.execute(text("DELETE FROM entity_aliases WHERE tenant_id = :t"), {"t": tenant_id})
     session.execute(text("DELETE FROM entities WHERE tenant_id = :t"), {"t": tenant_id})
+    session.execute(
+        text("DELETE FROM simulation_seed_sources WHERE tenant_id = :t"), {"t": tenant_id}
+    )
     session.commit()
     session.close()
 
@@ -125,7 +129,9 @@ def _canned_acme_call_extraction(call_text: str) -> ExtractionResult:
 
 def test_acme_call_extraction_end_to_end(db_session: tuple[Session, uuid.UUID]) -> None:
     db, tenant_id = db_session
-    connector = MockCallConnector(MOCK_DATA_DIR / "calls")
+    import_calls(db, tenant_id, MOCK_DATA_DIR)
+    db.commit()
+    connector = MockCallConnector(db, tenant_id)
     raw = next(r for r in connector.fetch(None) if r.external_id == "acme-discovery-2026-10-02")
     normalized = connector.normalize(raw)
 
@@ -224,7 +230,9 @@ def test_drive_section_with_markdown_and_em_dash_quotes_is_not_rejected(
     failure pattern to prove the fix end to end (extraction accepted, §4.3 invariant holds
     on the persisted, original-text span)."""
     db, tenant_id = db_session
-    connector = MockDriveConnector(MOCK_DATA_DIR / "drive")
+    import_drive(db, tenant_id, MOCK_DATA_DIR)
+    db.commit()
+    connector = MockDriveConnector(db, tenant_id)
     raw = next(
         r
         for r in connector.fetch(None)

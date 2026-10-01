@@ -1,4 +1,6 @@
-"""MockCallConnector: speaker-labelled transcripts under `mock-data/calls/*.txt`.
+"""MockCallConnector: reads `simulation_seed_sources` (kind='call'), one row per transcript,
+seeded from `mock-data/calls/*.txt` by `app.pipeline.seed_simulation_sources` -- the same
+rows `/connections/call/sync` and `/simulation/search` already read.
 
 One source per transcript (dispatch scope decision — see CallProvenance docstring), so
 the extractor gets full conversational context. Consent is required at ingestion (§6.2:
@@ -12,11 +14,15 @@ onboarding kickoff call, so that branch isn't exercised here.
 from __future__ import annotations
 
 import hashlib
+import uuid
 from collections.abc import Iterable
 from datetime import datetime
-from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.connectors.base import RawSource
+from app.models.orm import SimulationSeedSources
 from app.schemas.sources import CallConsent, CallProvenance, NormalizedSource, SourceKind
 
 
@@ -42,18 +48,27 @@ def _parse_header(text: str) -> tuple[dict[str, str], str]:
 class MockCallConnector:
     kind: SourceKind = "call"
 
-    def __init__(self, root: Path) -> None:
-        self._root = root
+    def __init__(self, db: Session, tenant_id: uuid.UUID) -> None:
+        self._db = db
+        self._tenant_id = tenant_id
 
     def fetch(self, since: datetime | None) -> Iterable[RawSource]:
-        for path in sorted(self._root.glob("*.txt")):
-            raw_text = path.read_text(encoding="utf-8")
+        rows = self._db.execute(
+            select(SimulationSeedSources)
+            .where(
+                SimulationSeedSources.tenant_id == self._tenant_id,
+                SimulationSeedSources.kind == "call",
+            )
+            .order_by(SimulationSeedSources.external_id)
+        ).scalars()
+        for row in rows:
+            raw_text = row.payload["transcript"]
             meta, body = _parse_header(raw_text)
             yield RawSource(
                 kind="call",
-                external_id=meta.get("call_id", path.stem),
+                external_id=meta.get("call_id", row.external_id),
                 payload={
-                    "path": str(path),
+                    "source_id": str(row.id),
                     "meta": meta,
                     "body": body,
                 },
@@ -76,7 +91,7 @@ class MockCallConnector:
             acl=["*"],
             provenance=CallProvenance(
                 call_id=raw.external_id,
-                transcript_path=raw.payload["path"],
+                transcript_path=f"simulation_seed_sources:{raw.payload['source_id']}",
                 consent=CallConsent(
                     given=True,
                     by=meta.get("consent_by", "unknown"),

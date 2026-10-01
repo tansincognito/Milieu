@@ -1,4 +1,6 @@
-"""MockDriveConnector: markdown files under `mock-data/drive/<stage>/*.md`.
+"""MockDriveConnector: reads `simulation_seed_sources` (kind='drive'), one row per document,
+seeded from `mock-data/drive/<stage>/*.md` by `app.pipeline.seed_simulation_sources` -- the
+same rows `/connections/drive/sync` and `/simulation/search` already read.
 
 Stage comes from the top-level folder (§3): `drive/sales` -> `sales`, etc. Each markdown
 heading section (§6.2) becomes its own source record.
@@ -8,18 +10,23 @@ from __future__ import annotations
 
 import hashlib
 import re
+import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app.connectors.base import RawSource
 from app.connectors.markdown import split_markdown_sections
+from app.models.orm import SimulationSeedSources
 from app.schemas.sources import DriveProvenance, NormalizedSource, SourceKind, Stage
 
 # Mock docs can optionally state their own narrative date ("Last updated: 2026-10-10"),
-# which — unlike filesystem mtime (checkout time, meaningless for lineage/supersession
+# which — unlike a DB row's `created_at` (import time, meaningless for lineage/supersession
 # ordering across a fictional §18 scenario timeline) — reflects when the document was
-# actually "last modified" in the story. Falls back to mtime when absent.
+# actually "last modified" in the story. Falls back to `created_at` when absent.
 _LAST_UPDATED_RE = re.compile(r"Last updated:\s*(\d{4}-\d{2}-\d{2})", re.IGNORECASE)
 
 FOLDER_TO_STAGE: dict[str, Stage] = {
@@ -34,24 +41,33 @@ FOLDER_TO_STAGE: dict[str, Stage] = {
 class MockDriveConnector:
     kind: SourceKind = "drive"
 
-    def __init__(self, root: Path) -> None:
-        self._root = root
+    def __init__(self, db: Session, tenant_id: uuid.UUID) -> None:
+        self._db = db
+        self._tenant_id = tenant_id
 
     def fetch(self, since: datetime | None) -> Iterable[RawSource]:
-        for path in sorted(self._root.rglob("*.md")):
-            relative = path.relative_to(self._root)
-            text = path.read_text(encoding="utf-8")
+        rows = self._db.execute(
+            select(SimulationSeedSources)
+            .where(
+                SimulationSeedSources.tenant_id == self._tenant_id,
+                SimulationSeedSources.kind == "drive",
+            )
+            .order_by(SimulationSeedSources.external_id)
+        ).scalars()
+        for row in rows:
+            path = row.payload["path"]
+            text = row.payload["content"]
             last_updated = _LAST_UPDATED_RE.search(text)
             if last_updated:
                 mtime = datetime.fromisoformat(last_updated.group(1)).replace(tzinfo=UTC)
             else:
-                mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+                mtime = row.created_at
             for section in split_markdown_sections(text):
                 yield RawSource(
                     kind="drive",
-                    external_id=f"{relative.as_posix()}#{section.index}",
+                    external_id=f"{path}#{section.index}",
                     payload={
-                        "path": relative.as_posix(),
+                        "path": path,
                         "heading": section.heading,
                         "section_index": section.index,
                         "text": section.text,
