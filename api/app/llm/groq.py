@@ -14,9 +14,14 @@ mirrors `openrouter.py` closely on purpose — same retry/validation/fallback be
 `json_object` + schema-in-prompt path OpenRouter only falls back to, rather than assuming
 strict schema mode works.
 
-NOT live-tested: no GROQ_API_KEY has been provided yet. The extraction/judge call shape is
-identical to the already-verified OpenRouter path, but that is not the same as having run
-a real request against Groq's API — say so plainly until it has.
+Live-tested 2026-10-01 against a real account. Confirmed constraint: Groq's free tier caps
+on a **tokens-per-minute** budget (`x-ratelimit-limit-tokens`, 8000 TPM for every usable
+text model tried), not request count (`x-ratelimit-limit-requests: 1000`, barely touched).
+`openai/gpt-oss-*` are reasoning models — they burn hidden `completion_tokens_details.
+reasoning_tokens` before emitting `content` (measured: 487 of 941 total tokens on a small
+extraction call), so a `max_tokens` cap can truncate before any content is produced. Default
+model is `qwen/qwen3.8-27b` instead: not a reasoning model, ~2.2x more token-efficient on
+the same call shape (422 vs 941 total tokens, same prompt), same extraction quality.
 """
 
 from __future__ import annotations
