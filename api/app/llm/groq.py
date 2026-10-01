@@ -27,6 +27,8 @@ the same call shape (422 vs 941 total tokens, same prompt), same extraction qual
 from __future__ import annotations
 
 import json
+import re
+import time
 from typing import Any
 
 import httpx
@@ -35,6 +37,18 @@ from pydantic import BaseModel, ValidationError
 from app.llm.base import LLMRateLimitedError, LLMValidationError, SchemaT
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+_RESET_RE = re.compile(r"(?:(\d+)m)?([\d.]+)s")
+
+
+def _parse_reset_seconds(value: str) -> float:
+    """Parse Groq's `x-ratelimit-reset-*` header, e.g. "2.639s" or "1m26.4s"."""
+    m = _RESET_RE.match(value)
+    if not m:
+        return 0.0
+    minutes = float(m.group(1)) if m.group(1) else 0.0
+    seconds = float(m.group(2))
+    return minutes * 60 + seconds
 
 
 class GroqLLMClient:
@@ -48,6 +62,19 @@ class GroqLLMClient:
         self._model = model
         headers = {"Authorization": f"Bearer {api_key}"}
         self._client = httpx.Client(base_url=base_url, headers=headers, timeout=timeout)
+        # Updated from every response's `x-ratelimit-*` headers (success or 429). None until
+        # the first request completes. Read by `_post` itself (see `_wait_for_budget`) so
+        # pacing covers every outbound request uniformly -- including the validation-retry
+        # inside `_call`, which fires a second request with no gap otherwise. Found live
+        # (2026-10-01): pacing only between worker job claims looked right in isolation but
+        # still 429'd every cycle, because the real back-to-back pair was a job's own retry,
+        # not two different jobs -- external, job-level pacing could never see that gap.
+        self.remaining_tokens: int | None = None
+        self.reset_tokens_seconds: float | None = None
+        # Conservative margin (half the known 8000 TPM limit), not a measured per-call cost
+        # -- real content size varies per request, so this is size-agnostic headroom rather
+        # than a guess at any one call's actual need.
+        self._min_tokens_margin = 4000
 
     def extract(self, schema: type[SchemaT], system: str, content: str) -> SchemaT:
         return self._call(schema, system, content)
@@ -100,8 +127,23 @@ class GroqLLMClient:
         except (KeyError, IndexError) as exc:
             raise RuntimeError(f"Groq returned no completion: {data.get('error') or data}") from exc
 
+    def _wait_for_budget(self) -> None:
+        if self.remaining_tokens is None or self.reset_tokens_seconds is None:
+            return
+        if self.remaining_tokens < self._min_tokens_margin:
+            time.sleep(self.reset_tokens_seconds)
+
     def _post(self, body: dict) -> httpx.Response:
+        self._wait_for_budget()
         resp = self._client.post("/chat/completions", json=body)
+
+        remaining_hdr = resp.headers.get("x-ratelimit-remaining-tokens")
+        reset_hdr = resp.headers.get("x-ratelimit-reset-tokens")
+        if remaining_hdr is not None:
+            self.remaining_tokens = int(remaining_hdr)
+        if reset_hdr is not None:
+            self.reset_tokens_seconds = _parse_reset_seconds(reset_hdr)
+
         if resp.status_code == 429:
             retry_after_hdr = resp.headers.get("Retry-After")
             retry_after = float(retry_after_hdr) if retry_after_hdr else None
